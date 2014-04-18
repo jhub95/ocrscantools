@@ -7,37 +7,31 @@ for my $f (<*.jpg>) {
     $f =~ /^(\d+)\./ or next;
     push @{ $lists{ $1 % 2 ? 'odd' : 'even' } }, $f;
 }
-print Dumper \%lists;
 
 while( my ($type, $files) = each %lists ) {
-    # XXX needs to be an even number of differences
-    shift @$files if @$files % 2;
-    print "@$files\n";
 
+    # XXX only use one page
     my @cmd = (
         'convert',
-        '-compose' => 'divide_dst',
-        shift @$files => '-auto-orient'
+        pop @$files,
+        qw< -auto-orient >,
     );
 
-    for(@$files) {
-        push @cmd,
-            $_,
-            '-auto-orient',
-            '-composite';
-    }
-
     if( $type eq 'odd' ) {
-        #push @cmd, '-crop','98%x100%+100%+0';
+        push @cmd, qw< -gravity NorthEast -crop 98.5%x100%+0+0 >
     } else {
-        push @cmd, '-crop','93%x100%+0+0';
+        push @cmd, qw< -crop 92%x100%+0+0 >
     }
 
-    push @cmd, "$type.jpg";
-    #push @cmd, qw< -virtual-pixel edge -blur 0x2 -fuzz 50% -trim -format >,
-    #    '%[fx:page.x],%[fx:page.y] %[fx:page.x+w],%[fx:page.y+h]',
-    #    'info:';
-    print "type: $type\n";
-    print "@cmd\n";
+    push @cmd,
+        qw< -resize 20% -threshold 50% -morphology Smooth:20 square -resize 500% -trim >,
+        #qw< -shave 50x50 >,
+        qw< -format >,
+        $type . '_page_crop = %[fx:w-100]x%[fx:h-100]+%[fx:page.x+50]+%[fx:page.y+50]',
+        #'-draw "rectangle %[fx:page.x+50],%[fx:page.y+50] %[fx:page.x+w-50],%[fx:page.y+h-50]"',
+        'info:';
+
+    #print "type: $type\n";
+    #print "@cmd\n";
     system @cmd;
 }
