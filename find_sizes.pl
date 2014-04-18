@@ -11,9 +11,10 @@ for my $f (<*.jpg>) {
 while( my ($type, $files) = each %lists ) {
 
     # XXX only use one page
+    my $file = pop @$files;
     my @cmd = (
         'convert',
-        pop @$files,
+        $file,
         qw< -auto-orient >,
     );
 
@@ -27,11 +28,12 @@ while( my ($type, $files) = each %lists ) {
         qw< -resize 20% -threshold 50% -morphology Smooth:20 square -resize 500% -trim >,
         #qw< -shave 50x50 >,
         qw< -format >,
-        $type . '_page_crop = %[fx:w-100]x%[fx:h-100]+%[fx:page.x+50]+%[fx:page.y+50]',
-        #'-draw "rectangle %[fx:page.x+50],%[fx:page.y+50] %[fx:page.x+w-50],%[fx:page.y+h-50]"',
+        $type . '_page_crop = %[fx:w-100]x%[fx:h-100]+%[fx:page.x+50]+%[fx:page.y+50] '
+        . "\n" . 'convert ' . $file . ' -auto-orient -fill none -strokewidth 10 -stroke red -draw "rectangle %[fx:page.x+50],%[fx:page.y+50] %[fx:page.x+w-50],%[fx:page.y+h-50]" show:'
+        ,
         'info:';
 
     #print "type: $type\n";
-    #print "@cmd\n";
+    print "@cmd\n";
     system @cmd;
 }

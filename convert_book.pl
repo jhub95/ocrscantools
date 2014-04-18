@@ -33,8 +33,8 @@ if( $DEBUG ) {
     mkdir "output";
 }
 
-if( 0 &&
-        1 ) {
+my $white_background = BookConf->opt( 'white_background' );
+if( !$white_background ) {
     run_multi( sub {
         my ($page) = @_;
         my $crop = BookConf->opt( $page->{page_type} . '_ocr_crop' );
@@ -47,7 +47,8 @@ if( 0 &&
             '-resize' => '4000x4000',
             '-colorspace' => 'gray',
             '-blur' => '0x10',
-            "output/" . $page->{page_type} . '_blank_mask.png' );
+            $page->{output}
+        );
     }, sub {
         my ($q) = @_;
         for my $type ('odd', 'even') {
@@ -57,7 +58,13 @@ if( 0 &&
                 die "No blank $type page specified in config";
             }
 
-            $q->enqueue( $page );
+            my $output = "output/" . $page->{page_type} . '_blank_mask.png';
+            next if -f $output;
+
+            $q->enqueue( {
+                %$page,
+                output => $output
+            });
         }
     });
 }
@@ -115,9 +122,8 @@ sub process_page {
         $outimg = $tmpimg->filename
     }
 
-    if( 0 &&
-            1 ) {
-        runcmd 
+    if( !-f $outimg ) {
+        my @cmd = (
             'convert',
                 $page->{file},
                 '-auto-orient',
@@ -125,18 +131,27 @@ sub process_page {
                 # XXX use adaptive resize?
                 '-resize' => '4000x4000',
                 '-colorspace' => 'gray',
+        );
 
+        if( !$white_background ) {
+            push @cmd,
                 # Now combine in mask image
                 'output/' . $page->{page_type} . '_blank_mask.png',
-                '-compose' => 'Divide_Src', '-composite',
+                '-compose' => 'Divide_Src', '-composite';
 
-                # And post-processing
-                '-level' => '83%,92%',
+        }
 
-                '-morphology' => 'thicken' => '3x1:1,0,1',
-                
-                $outimg
-        ;
+        push @cmd,
+            # And post-processing
+            #qw< -level 50%,90% -morphology erode rectangle:6x1 >,
+            #'-level' => '83%,92%',
+
+            '-level' => '90%,98%',
+
+            #'-morphology' => 'thicken' => '3x1:1,0,1',
+            
+            $outimg;
+        runcmd @cmd;
     }
 
     my $txtfile = tmpfile();
