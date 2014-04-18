@@ -4,12 +4,15 @@ use utf8;
 use strict;
 use warnings;
 use List::Util 'first';
-use BookConf;
 use Path::Tiny;
 use Data::Dumper;
 use Thread::Queue;
 use Sys::CpuAffinity;
 use File::Temp ();
+
+use FindBin;
+use lib $FindBin::Bin;
+use BookConf;
 binmode \*STDOUT => 'utf8';
 
 my $DEBUG = 1;
@@ -116,6 +119,7 @@ sub process_page {
                 $page->{file},
                 '-auto-orient',
                 '-crop' => $crop, '+repage',
+                # XXX use adaptive resize?
                 '-resize' => '4000x4000',
                 '-colorspace' => 'gray',
 
