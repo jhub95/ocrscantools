@@ -33,36 +33,39 @@ if( $DEBUG ) {
     mkdir "output";
 }
 
-run_multi( sub {
-    my ($page) = @_;
-    my $crop = BookConf->opt( $page->{page_type} . '_ocr_crop' );
-    # XXX unlink at end if dev run
-    runcmd( 'convert',
-        $page->{file},
-        '-auto-orient',
-        '-crop' => $crop,
-        '+repage',
-        '-resize' => '4000x4000',
-        '-colorspace' => 'gray',
-        '-blur' => '0x10',
-        "output/" . $page->{page_type} . '_blank_mask.png' );
-}, sub {
-    my ($q) = @_;
-    for my $type ('odd', 'even') {
-        my $name = BookConf->opt( $type . '_blank_page' );
-        my $page = first { $_->{file} eq $name } @pages;
-        if( !$page ) {
-            die "No blank $type page specified in config";
-        }
+if( 0 &&
+        1 ) {
+    run_multi( sub {
+        my ($page) = @_;
+        my $crop = BookConf->opt( $page->{page_type} . '_ocr_crop' );
+        # XXX unlink at end if dev run
+        runcmd( 'convert',
+            $page->{file},
+            '-auto-orient',
+            '-crop' => $crop,
+            '+repage',
+            '-resize' => '4000x4000',
+            '-colorspace' => 'gray',
+            '-blur' => '0x10',
+            "output/" . $page->{page_type} . '_blank_mask.png' );
+    }, sub {
+        my ($q) = @_;
+        for my $type ('odd', 'even') {
+            my $name = BookConf->opt( $type . '_blank_page' );
+            my $page = first { $_->{file} eq $name } @pages;
+            if( !$page ) {
+                die "No blank $type page specified in config";
+            }
 
-        $q->enqueue( $page );
-    }
-});
+            $q->enqueue( $page );
+        }
+    });
+}
 
 run_multi( \&process_page, sub {
     my ($q) = @_;
     $q->enqueue( @pages );
-}, 1.5);
+}, 4/3);
 
 $return_q->end;
 
@@ -112,7 +115,7 @@ sub process_page {
         $outimg = $tmpimg->filename
     }
 
-    if( #0 &&
+    if( 0 &&
             1 ) {
         runcmd 
             'convert',
@@ -127,10 +130,8 @@ sub process_page {
                 'output/' . $page->{page_type} . '_blank_mask.png',
                 '-compose' => 'Divide_Src', '-composite',
 
-                '-contrast-stretch', '0',
-
                 # And post-processing
-                '-level' => '80%,88%',
+                '-level' => '83%,92%',
 
                 '-morphology' => 'thicken' => '3x1:1,0,1',
                 
@@ -141,7 +142,7 @@ sub process_page {
     my $txtfile = tmpfile();
     runcmd
         'tesseract',
-        '-l' => 'tur',
+        '-l' => 'mark',
         $outimg => $txtfile->filename,
         'mark';
 
@@ -154,7 +155,7 @@ sub process_page {
 
     unlink $real_txt;
 
-    print Dumper $page;
+    #print Dumper $page;
 }
 
 # Run specified number of processes as subthread using queue. Returns when all
@@ -163,6 +164,7 @@ sub run_multi {
     my ($process_func, $main_thread, $thread_divisor) = @_;
     my $NUM_CPUS = Sys::CpuAffinity::getNumCpus();
     my $MAX_THREADS = $NUM_CPUS / ($thread_divisor || 1);
+    #print "$MAX_THREADS\n";
     my $q = Thread::Queue->new;
 
     my @thr;
