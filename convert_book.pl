@@ -34,6 +34,7 @@ if( $DEBUG ) {
     mkdir "page_output";
 }
 
+my $pdf_page_size = BookConf->opt( 'pdf_page_size' ) or die;
 my $white_background = BookConf->opt( 'white_background' );
 if( !$white_background ) {
     run_multi( sub {
@@ -231,53 +232,62 @@ sub process_whole_page {
             'convert' => $tmpimg,
             '-quiet',
             qw< -blur 0x3 -fuzz 50% -virtual-pixel edge -bordercolor white -border 1 -trim >,
-            '-format' => quotemeta '%[fx:w]x%[fx:h]+%[fx:page.x]+%[fx:page.y]!',
+            '-format' => '"%[fx:w] %[fx:h] %[fx:page.x] %[fx:page.y]"',
             'info:'
         );
         my $cmd = join " ", @cmd;
 
-        chomp( my $crop = `$cmd` );
-        warn "  $outimg: $crop\n";
-        if( $crop eq '1x1+-1+-1!' ) {
+        chomp( my $out = `$cmd` );
+        my ($w,$h,$offx,$offy) = split / /, $out;
+
+        warn "  $outimg: $out\n";
+        if( $w < 5 || $h < 5 ) {
             # XXX image was blank
             return;
         } else {
+
+            # Expand a bit to avoid cropping key side stuff (but if
+            # larger than specified image above won't do anything)
+            my $wadd = int($w * 0.01);
+            my $hadd = int($h * 0.01);
+            $_ = $_ < 30 ? $_ : 30 for $wadd, $hadd;    # 1% or X px minimum expansion
+            $offx -= $wadd;
+            $offy -= $hadd;
+            $w += $wadd*2;
+            $h += $hadd*2;
+
             runcmd 'convert',
-                $tmpimg,
+                qw< ( -size >, $pdf_page_size, qw< xc:white ) >,   # Create white layer
 
-                # Perhaps instead of this create standard blank page based on a fixed size?
-                qw< ( -clone 0 -threshold -1 ) >,   # Create white layer
-                    # Crop main content to boundaries
-                qw< ( -clone 0 -crop >, $crop,
-                    # Set to center
-                    qw< -gravity center +geometry >,
+                # Crop main content to boundaries
+                qw< ( >,
+                    $tmpimg,
 
-                    # Expand a bit to avoid cropping key side stuff (but if
-                    # larger than specified image above won't do anything)
-                    '-crop' => '102%,102%+0+0!',
-                    '-flatten',
-                    qw< +repage ) >,
+                    qw< -crop >, "${w}x${h}+$offx+$offy!",
+
+                    '-flatten', # expand if necessary (to get it centered)
+                    qw< +repage
+                ) >,
+
+                # Set to center
+                qw< -gravity center +geometry >,
+
                 # Merge white and centered content together
-                qw< -delete 0 -composite >,
+                qw< -composite >,
 
-                # add on some borders to make the image nicely centered and ensure
-                # we dont kill off key stuff on the edge
-                #'-gravity' => 'Center',
-                #'-background' => 'white',
-                #'-crop' => '150%,155%+0+0!',
-                #'-flatten',
                 '+repage',
 
                 $outimg;
         }
-        #return;
     }
+
+    #return;
 
     runcmd
         'tesseract',
         '-l' => 'mark',
         $outimg => sprintf( "page_output/%03d", $page->{num} ),
-        'mark_hocr';
+        'mark_pdf';
 
     #print Dumper $page;
 }
