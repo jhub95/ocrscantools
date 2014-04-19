@@ -31,6 +31,7 @@ for(<*.jpg>) {
 
 if( $DEBUG ) {
     mkdir "output";
+    mkdir "page_output";
 }
 
 my $white_background = BookConf->opt( 'white_background' );
@@ -69,6 +70,15 @@ if( !$white_background ) {
     });
 }
 
+if( 1 ) {
+    run_multi( \&process_whole_page, sub {
+        my ($q) = @_;
+        $q->enqueue( @pages );
+    }, 4/3);
+
+    exit;
+}
+
 run_multi( \&process_page, sub {
     my ($q) = @_;
     $q->enqueue( @pages );
@@ -89,18 +99,18 @@ for my $page ( @pages ) {
 sub runcmd {
     my (@cmd) = @_;
 
-    print "@cmd\n" if $DEBUG;
+    warn "@cmd\n" if $DEBUG;
     system @cmd;
 
     if ($? == -1) {
-        print "failed to execute: $!\n";
+        warn "failed to execute: $!\n";
     } elsif ($? & 127) {
-        printf "child died with signal %d, %s coredump\n",
+        warn sprintf "child died with signal %d, %s coredump\n",
            ($? & 127),  ($? & 128) ? 'with' : 'without';
     } else {
         my $val = $? >> 8;
         if( $val != 0 ) {
-            printf "child exited with value %d\n", $val;
+            warn sprintf "child exited with value %d\n", $val;
         }
     }
 }
@@ -117,7 +127,7 @@ sub process_page {
     } else {
         # keep in scope so doesnt get deleted
         $tmpimg = tmpfile(
-            EXTENSION => "." . $OUT_EXT
+            SUFFIX => "." . $OUT_EXT
         );
         $outimg = $tmpimg->filename
     }
@@ -128,6 +138,7 @@ sub process_page {
                 $page->{file},
                 '-auto-orient',
                 '-crop' => $crop, '+repage',
+                '-deskew' => '80%',
                 # XXX use adaptive resize?
                 '-resize' => '4000x4000',
                 '-colorspace' => 'gray',
@@ -152,6 +163,7 @@ sub process_page {
             
             $outimg;
         runcmd @cmd;
+        #return;
     }
 
     my $txtfile = tmpfile();
@@ -169,6 +181,103 @@ sub process_page {
     #print path( $real_txt )->slurp_utf8, "\n";
 
     unlink $real_txt;
+
+    #print Dumper $page;
+}
+
+sub process_whole_page {
+    my ($page) = @_;
+
+    my $crop = BookConf->opt( $page->{page_type} . '_page_crop' );
+
+    my ($tmpimg, $outimg);
+    my $OUT_EXT = "png";
+    if( $DEBUG ) {
+        $outimg = sprintf "page_output/%03d.%s", $page->{num}, $OUT_EXT;
+    } else {
+        # keep in scope so doesnt get deleted
+        $tmpimg = tmpfile(
+            SUFFIX => "." . $OUT_EXT
+        );
+        $outimg = $tmpimg->filename
+    }
+
+    if( !-f $outimg ) {
+        my @cmd = (
+            'convert',
+                $page->{file},
+                '-auto-orient',
+                '-crop' => $crop,
+                '-deskew' => '80%',
+                '+repage',
+
+                # XXX use adaptive resize?
+                '-colorspace' => 'gray',
+        );
+
+        my $tmpimg = tmpfile( SUFFIX => ".png" );
+        push @cmd,
+            # And post-processing
+            #qw< -level 50%,90% -morphology erode rectangle:6x1 >,
+            #'-level' => '83%,92%',
+
+            '-level' => '90%,98%',
+            $tmpimg;
+
+        runcmd @cmd;
+
+        # Find white image borders using a blur
+        @cmd = (
+            'convert' => $tmpimg,
+            '-quiet',
+            qw< -blur 0x3 -fuzz 50% -virtual-pixel edge -bordercolor white -border 1 -trim >,
+            '-format' => quotemeta '%[fx:w]x%[fx:h]+%[fx:page.x]+%[fx:page.y]!',
+            'info:'
+        );
+        my $cmd = join " ", @cmd;
+
+        chomp( my $crop = `$cmd` );
+        warn "  $outimg: $crop\n";
+        if( $crop eq '1x1+-1+-1!' ) {
+            # XXX image was blank
+            return;
+        } else {
+            runcmd 'convert',
+                $tmpimg,
+
+                # Perhaps instead of this create standard blank page based on a fixed size?
+                qw< ( -clone 0 -threshold -1 ) >,   # Create white layer
+                    # Crop main content to boundaries
+                qw< ( -clone 0 -crop >, $crop,
+                    # Set to center
+                    qw< -gravity center +geometry >,
+
+                    # Expand a bit to avoid cropping key side stuff (but if
+                    # larger than specified image above won't do anything)
+                    '-crop' => '102%,102%+0+0!',
+                    '-flatten',
+                    qw< +repage ) >,
+                # Merge white and centered content together
+                qw< -delete 0 -composite >,
+
+                # add on some borders to make the image nicely centered and ensure
+                # we dont kill off key stuff on the edge
+                #'-gravity' => 'Center',
+                #'-background' => 'white',
+                #'-crop' => '150%,155%+0+0!',
+                #'-flatten',
+                '+repage',
+
+                $outimg;
+        }
+        #return;
+    }
+
+    runcmd
+        'tesseract',
+        '-l' => 'mark',
+        $outimg => sprintf( "page_output/%03d", $page->{num} ),
+        'mark_hocr';
 
     #print Dumper $page;
 }
