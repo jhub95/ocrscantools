@@ -1,17 +1,23 @@
 use strict;
 use warnings;
+use FindBin;        
+use lib $FindBin::Bin;
+use BookConf;
 use Data::Dumper;
 
-my %lists;
-for my $f (<*.jpg>) {
-    $f =~ /^(\d+)\./ or next;
-    push @{ $lists{ $1 % 2 ? 'odd' : 'even' } }, $f;
-}
+my ($base) = $0 =~ m!(.*)/[^/]*$!;
+$base ||= '.';
 
-while( my ($type, $files) = each %lists ) {
+my %lists;
+#for my $f (<*.jpg>) {
+#    $f =~ /^(\d+)\./ or next;
+#    push @{ $lists{ $1 % 2 ? 'odd' : 'even' } }, $f;
+#}
+
+for my $type (qw< odd even >) {
+    my $file = BookConf->opt( $type . "_blank_page" );
 
     # XXX only use one page
-    my $file = pop @$files;
     my @cmd = (
         'convert',
         $file,
@@ -19,21 +25,16 @@ while( my ($type, $files) = each %lists ) {
     );
 
     if( $type eq 'odd' ) {
-        push @cmd, qw< -gravity NorthEast -crop 98.5%x100%+0+0 >
+        #push @cmd, qw< -gravity NorthEast -crop 98.5%x100%+0+0 >
     } else {
-        push @cmd, qw< -crop 92%x100%+0+0 >
+        push @cmd, qw< -crop 94%x100%+0+0 >
     }
-
-    push @cmd,
-        qw< -resize 20% -threshold 50% -morphology Smooth:20 square -resize 500% -trim >,
-        #qw< -shave 50x50 >,
-        qw< -format >,
-        $type . '_page_crop = %[fx:w-100]x%[fx:h-100]+%[fx:page.x+50]+%[fx:page.y+50] '
-        . "\n" . 'convert ' . $file . ' -auto-orient -fill none -strokewidth 10 -stroke red -draw "rectangle %[fx:page.x+50],%[fx:page.y+50] %[fx:page.x+w-50],%[fx:page.y+h-50]" show:'
-        ,
-        'info:';
+    push @cmd, "/tmp/t.jpg";
 
     #print "type: $type\n";
-    print "@cmd\n";
+    #print "@cmd\n";
     system @cmd;
+    #print "$base/detect_page /tmp/t.jpg\n";
+    chomp( my $dim = `$base/detect_page /tmp/t.jpg` );
+    print $type . "_page_crop = ", $dim, "\n";
 }
