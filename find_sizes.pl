@@ -14,8 +14,11 @@ my %lists;
 #    push @{ $lists{ $1 % 2 ? 'odd' : 'even' } }, $f;
 #}
 
-for my $type (qw< odd even >) {
-    my $file = BookConf->opt( $type . "_blank_page" );
+for my $file (<*.jpg>) {
+#for my $type (qw< odd even >) {
+#    my $file = BookConf->opt( $type . "_blank_page" );
+    $file =~ m!(\d+)\.jpg$!i;
+    my $type = $1 % 2 ? 'odd' : 'even';
 
     # XXX only use one page
     my @cmd = (
@@ -24,11 +27,14 @@ for my $type (qw< odd even >) {
         qw< -auto-orient >,
     );
 
-    if( $type eq 'odd' ) {
-        #push @cmd, qw< -gravity NorthEast -crop 98.5%x100%+0+0 >
-    } else {
-        push @cmd, qw< -crop 94%x100%+0+0 >
+    if( my $crop = BookConf->opt( $type . "_detect_crop" ) ) {
+        if( $type eq 'odd' ) {
+            # XXX need to adjust output params
+            push @cmd, qw< -gravity NorthEast >
+        }
+        push @cmd, -crop => $crop;
     }
+
     push @cmd, "/tmp/t.jpg";
 
     #print "type: $type\n";
@@ -36,5 +42,16 @@ for my $type (qw< odd even >) {
     system @cmd;
     #print "$base/detect_page /tmp/t.jpg\n";
     chomp( my $dim = `$base/detect_page /tmp/t.jpg` );
-    print $type . "_page_crop = ", $dim, "\n";
+    if( $dim ) {
+        my ($w, $h, $x, $y) = $dim =~ /(\d+)x(\d+)\+(\d+)\+(\d+)/;
+        #print $type . "_page_crop = ", $dim, "\n";
+        print "$file: ", $dim, "\n";
+        my $draw = sprintf "rectangle %d,%d %d,%d\n", $x, $y, $x+$w, $y+$h;
+        @cmd = (
+            'convert', $file,
+            qw< -auto-orient -fill none -stroke red -strokewidth 10 -draw >, $draw,
+            "output/$file"
+        );
+        system @cmd;
+    }
 }

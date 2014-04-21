@@ -1,4 +1,4 @@
-// g++ -O3 -o detect_page squares.cpp -lopencv_core -lopencv_objdetect -lopencv_highgui -lopencv_imgproc
+// g++ -O3 -o detect_page detect_page.cpp -lopencv_core -lopencv_objdetect -lopencv_highgui -lopencv_imgproc
 
 #include "opencv2/core/core.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
@@ -49,28 +49,38 @@ void findSquares( Mat& image, vector<vector<Point> >& squares )
         cvtColor( timg, gray0, CV_BGR2GRAY, 1 );
         
         // try several threshold levels
-        for( int l = 0; l < N; l++ )
+        //for( int l = 1; l < N; l++ )
         {
             // hack: use Canny instead of zero threshold level.
             // Canny helps to catch squares with gradient shading
-            if( l == 0 )
-            {
+            //if( l == 0 )
+            /*{
                 // apply Canny. Take the upper threshold from slider
                 // and set the lower to 0 (which forces edges merging)
-                Canny(gray0, gray, 0, thresh, 5);
+                Canny(gray0, gray, 0, 100, 5);
                 // dilate canny output to remove potential
                 // holes between edge segments
                 dilate(gray, gray, Mat(), Point(-1,-1));
-            }
-            else
+            }*/
+            //else
             {
                 // apply threshold if l!=0:
                 //     tgray(x,y) = gray(x,y) < (l+1)*255/N ? 255 : 0
-                gray = gray0 >= (l+1)*255/N;
+                gray = gray0 > 200;
             }
 
             // find contours and store them all as a list
             findContours(gray, contours, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE);
+
+#if 0
+            RNG rng(12345);
+            for( size_t i = 0; i < contours.size(); i++ )
+            {
+                drawContours(timg, contours, i, Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) ), 3 );
+                imshow( "blah", timg );
+            }
+                waitKey(0);
+#endif
 
             vector<Point> approx;
             
@@ -139,12 +149,27 @@ bool sortcmp( Point i, Point j ) {
     return i.x < j.x || i.y < j.y;
 }
 
-// the function draws all the squares in the image
-void drawSquares( Mat& image, vector<vector<Point> >& squares )
+int main(int argc, char** argv)
 {
-    if( !squares.size() )
-        return;
+    namedWindow( wndname, 1 );
+    vector<vector<Point> > squares;
 
+    // image.jpg
+    
+    Mat image = imread(argv[1], 1);
+    if( image.empty() )
+    {
+        cout << "Couldn't load " << argv[1] << endl;
+        return 1;
+    }
+    
+    findSquares(image, squares);
+
+    // none found
+    if( !squares.size() )
+        return 1;
+
+    // Now find biggest square (area)
     vector<Point> biggest = squares[0];
     Size biggest_wh = square_dim( biggest );
 
@@ -158,6 +183,7 @@ void drawSquares( Mat& image, vector<vector<Point> >& squares )
         }
     }
 
+    // XXX Now need to figure out the rectangle within this for cropping
     int w, h, x, y;
 
     // crop borders appropriately
@@ -175,24 +201,6 @@ void drawSquares( Mat& image, vector<vector<Point> >& squares )
     */
     cout << w * DOWNSIZE << "x" << h * DOWNSIZE << "+" << x * DOWNSIZE << "+" << y * DOWNSIZE << endl;
     //cout << x * DOWNSIZE << "," << y * DOWNSIZE << " " << (x+w) * DOWNSIZE << "," << (y+h) * DOWNSIZE << endl;
-}
 
-
-int main(int argc, char** argv)
-{
-    //namedWindow( wndname, 1 );
-    vector<vector<Point> > squares;
-
-    // image.jpg
-    
-    Mat image = imread(argv[1], 1);
-    if( image.empty() )
-    {
-        cout << "Couldn't load " << argv[1] << endl;
-        return 1;
-    }
-    
-    findSquares(image, squares);
-    drawSquares(image, squares);
     return 0;
 }

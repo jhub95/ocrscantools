@@ -34,7 +34,7 @@ if( $DEBUG ) {
     mkdir "page_output";
 }
 
-my $pdf_page_size = BookConf->opt( 'pdf_page_size' ) or die;
+my $pdf_page_size = BookConf->opt( 'pdf_page_size' ) or die "pdf_page_size required config option missing";
 my $white_background = BookConf->opt( 'white_background' );
 if( !$white_background ) {
     run_multi( sub {
@@ -189,7 +189,32 @@ sub process_page {
 sub process_whole_page {
     my ($page) = @_;
 
+    my $type = $page->{page_type};
     my $crop = BookConf->opt( $page->{page_type} . '_page_crop' );
+    if( !$crop ) {
+        my $autoimg = tmpfile(
+            SUFFIX => ".jpg"
+        );
+        my @cmd = (
+            'convert', $page->{file}, '-auto-orient'
+        );
+        if( my $crop = BookConf->opt( $type . "_detect_crop" ) ) {
+            if( $type eq 'odd' ) {
+                # XXX need to adjust output params
+                push @cmd, qw< -gravity NorthEast >
+            }
+            push @cmd, -crop => $crop;
+        }
+        push @cmd, $autoimg;
+        runcmd @cmd;
+        chomp( my $dim = `$FindBin::Bin/detect_page $autoimg` );
+        if( !$dim ) {
+            warn "Page dimensions not found for $page->{file}\n";
+            return;
+        }
+
+        $crop = $dim;
+    }
 
     my ($tmpimg, $outimg);
     my $OUT_EXT = "png";
@@ -222,7 +247,8 @@ sub process_whole_page {
             #qw< -level 50%,90% -morphology erode rectangle:6x1 >,
             #'-level' => '83%,92%',
 
-            '-level' => '90%,98%',
+            #'-level' => '90%,98%', # vaaz
+            #'-level' => '70%,90%',
             $tmpimg;
 
         runcmd @cmd;
