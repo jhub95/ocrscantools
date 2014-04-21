@@ -3,7 +3,7 @@ use threads;
 use utf8;
 use strict;
 use warnings;
-use List::Util 'first';
+use List::Util qw< first min max >;
 use Path::Tiny;
 use Data::Dumper;
 use Thread::Queue;
@@ -39,14 +39,13 @@ my $white_background = BookConf->opt( 'white_background' );
 if( !$white_background ) {
     run_multi( sub {
         my ($page) = @_;
-        my $crop = BookConf->opt( $page->{page_type} . '_ocr_crop' );
+
         # XXX unlink at end if dev run
         runcmd( 'convert',
             $page->{file},
             '-auto-orient',
-            '-crop' => $crop,
+            get_crop_args( $page ),
             '+repage',
-            '-resize' => '4000x4000',
             '-colorspace' => 'gray',
             '-blur' => '0x10',
             $page->{output}
@@ -140,8 +139,6 @@ sub process_page {
                 '-auto-orient',
                 '-crop' => $crop, '+repage',
                 '-deskew' => '80%',
-                # XXX use adaptive resize?
-                '-resize' => '4000x4000',
                 '-colorspace' => 'gray',
         );
 
@@ -186,35 +183,91 @@ sub process_page {
     #print Dumper $page;
 }
 
+sub get_crop_args {
+    my ($page) = @_;
+    my $type = $page->{page_type};
+
+    if( my $crop = BookConf->opt( $type . '_page_crop' ) ) {
+        return -crop => $crop;
+    }
+
+    my $autoimg = tmpfile(
+        SUFFIX => ".jpg"
+    );
+    my @cmd = (
+        'convert', $page->{file}, '-auto-orient'
+    );
+    if( my $crop = BookConf->opt( $type . "_detect_crop" ) ) {
+        if( $type eq 'odd' ) {
+            # XXX need to adjust output params
+            push @cmd, qw< -gravity NorthEast >
+        }
+        push @cmd, -crop => $crop;
+    }
+    push @cmd, $autoimg;
+    runcmd @cmd;
+    chomp( my @dim = `$FindBin::Bin/detect_page $autoimg` );
+    if( !@dim ) {
+        warn "Page dimensions not found for $page->{file}\n";
+        return;
+    }
+
+    # Now have 4 points of the corners. Figure out the big rectangle
+    # surrounding them, crop, and then move the points to fill the whole
+    # square image
+    my @points = sort { $a->{y} <=> $b->{y} } map { my ($x,$y) = split ' '; { x => $x, y => $y } } @dim;
+
+    # top-left top-right bottom-left bottom-right
+    @points = (
+        sort( { $a->{x} <=> $b->{x} } @points[0,1] ),
+        sort( { $a->{x} <=> $b->{x} } @points[2,3] ),
+    );
+
+    #for(my $i = 0; $i < @points; $i++) {
+    #    printf "%d,%d\n", @{$points[$i]}{qw<x y>}
+    #}
+
+    # Shrink the crop area by a few px
+    $points[$_]{x} += 10 for 0,2;
+    $points[$_]{x} -= 10 for 1,3;
+
+    $points[$_]{y} += 10 for 0,1;
+    $points[$_]{y} -= 10 for 2,3;
+
+    # Get surrounding rectangle points
+    my (%min, %max, %wh);
+    for my $p (qw< x y >) {
+        $min{$p} = min( map { $_->{$p} } @points );
+        $max{$p} = max( map { $_->{$p} } @points );
+        $wh{$p} = $max{$p} - $min{$p};
+    }
+    my $crop = sprintf "%dx%d+%d+%d",
+        $wh{x}, $wh{y},
+        $min{x}, $min{y};
+
+    my @real_points = (
+        { x => 0, y => 0 },
+        { x => $wh{x}, y => 0 },
+        { x => 0, y => $wh{y} },
+        { x => $wh{x}, y => $wh{y} },
+    );
+
+    # Now figure out where each corner should go in the image (using a distort)
+    my $distort;
+    for(my $i = 0; $i < @points; $i++) {
+        $distort .= sprintf " %d,%d %d,%d",
+            $points[$i]{x} - $min{x},
+            $points[$i]{y} - $min{y},
+            @{$real_points[$i]}{qw< x y>};
+    }
+
+    return
+        -crop => $crop,
+        '-distort' => 'BilinearReverse' => $distort;
+}
+
 sub process_whole_page {
     my ($page) = @_;
-
-    my $type = $page->{page_type};
-    my $crop = BookConf->opt( $page->{page_type} . '_page_crop' );
-    if( !$crop ) {
-        my $autoimg = tmpfile(
-            SUFFIX => ".jpg"
-        );
-        my @cmd = (
-            'convert', $page->{file}, '-auto-orient'
-        );
-        if( my $crop = BookConf->opt( $type . "_detect_crop" ) ) {
-            if( $type eq 'odd' ) {
-                # XXX need to adjust output params
-                push @cmd, qw< -gravity NorthEast >
-            }
-            push @cmd, -crop => $crop;
-        }
-        push @cmd, $autoimg;
-        runcmd @cmd;
-        chomp( my $dim = `$FindBin::Bin/detect_page $autoimg` );
-        if( !$dim ) {
-            warn "Page dimensions not found for $page->{file}\n";
-            return;
-        }
-
-        $crop = $dim;
-    }
 
     my ($tmpimg, $outimg);
     my $OUT_EXT = "png";
@@ -229,17 +282,35 @@ sub process_whole_page {
     }
 
     if( !-f $outimg ) {
+        my @crop_args = get_crop_args( $page ) or return;
+
         my @cmd = (
             'convert',
                 $page->{file},
                 '-auto-orient',
-                '-crop' => $crop,
+                @crop_args,
                 '-deskew' => '80%',
                 '+repage',
 
-                # XXX use adaptive resize?
                 '-colorspace' => 'gray',
         );
+
+        if( !$white_background ) {
+            push @cmd,
+                # Now combine in mask image
+                'output/' . $page->{page_type} . '_blank_mask.png',
+                '-compose' => 'Divide_Src', '-composite';
+
+        }
+
+        push @cmd,
+            # Now mask out anything that doesnt look like text to give nice smooth white background
+            '(',
+                qw< +clone -contrast-stretch 0.5%x60% -morphology erode:3 disk -threshold 80% -blur 0x5 -threshold 80% -negate -write mpr:mask >,
+            ')',
+            #-lat => '30x30,-1%',
+            qw< -mask mpr:mask -threshold -1 +mask -delete 1 >
+            ;
 
         my $tmpimg = tmpfile( SUFFIX => ".png" );
         push @cmd,
@@ -248,7 +319,7 @@ sub process_whole_page {
             #'-level' => '83%,92%',
 
             #'-level' => '90%,98%', # vaaz
-            #'-level' => '70%,90%',
+            '-level' => '85%,95%',
             $tmpimg;
 
         runcmd @cmd;
@@ -257,7 +328,7 @@ sub process_whole_page {
         @cmd = (
             'convert' => $tmpimg,
             '-quiet',
-            qw< -blur 0x3 -fuzz 50% -virtual-pixel edge -bordercolor white -border 1 -trim >,
+            qw< -blur 0x3 -fuzz 20% -virtual-pixel edge -bordercolor white -border 1 -trim >,
             '-format' => '"%[fx:w] %[fx:h] %[fx:page.x] %[fx:page.y]"',
             'info:'
         );
@@ -274,9 +345,9 @@ sub process_whole_page {
 
             # Expand a bit to avoid cropping key side stuff (but if
             # larger than specified image above won't do anything)
-            my $wadd = int($w * 0.01);
-            my $hadd = int($h * 0.01);
-            $_ = $_ < 30 ? $_ : 30 for $wadd, $hadd;    # 1% or X px minimum expansion
+            my $wadd = int($w * 0.03);
+            my $hadd = int($h * 0.03);
+            $_ = $_ < 30 ? $_ : 30 for $wadd, $hadd;    # % or X px minimum expansion
             $offx -= $wadd;
             $offy -= $hadd;
             $w += $wadd*2;

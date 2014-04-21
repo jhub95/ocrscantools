@@ -183,6 +183,11 @@ int main(int argc, char** argv)
         }
     }
 
+    for( size_t i = 0; i < biggest.size(); i++ ) {
+        cout << biggest[i].x * DOWNSIZE << " " << biggest[i].y * DOWNSIZE << endl;
+    }
+
+#if 0
     // XXX Now need to figure out the rectangle within this for cropping
     int w, h, x, y;
 
@@ -201,6 +206,7 @@ int main(int argc, char** argv)
     */
     cout << w * DOWNSIZE << "x" << h * DOWNSIZE << "+" << x * DOWNSIZE << "+" << y * DOWNSIZE << endl;
     //cout << x * DOWNSIZE << "," << y * DOWNSIZE << " " << (x+w) * DOWNSIZE << "," << (y+h) * DOWNSIZE << endl;
+#endif
 
     return 0;
 }
