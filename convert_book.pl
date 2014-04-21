@@ -16,7 +16,6 @@ use BookConf;
 binmode \*STDOUT => 'utf8';
 
 my $DEBUG = 1;
-my $return_q = Thread::Queue->new;
 
 my @pages;
 for(<*.jpg>) {
@@ -34,63 +33,67 @@ if( $DEBUG ) {
     mkdir "page_output";
 }
 
-my $pdf_page_size = BookConf->opt( 'pdf_page_size' ) or die "pdf_page_size required config option missing";
-my $white_background = BookConf->opt( 'white_background' );
-if( !$white_background ) {
-    run_multi( sub {
-        my ($page) = @_;
+# autodetect crops for each page and find the largest width and height
+@pages = run_array( sub {
+    my ($page) = @_;
+    $page->{crop_args} = get_crop_args( $page ) or return;
+    return $page;
+}, \@pages );
 
-        # XXX unlink at end if dev run
-        runcmd( 'convert',
-            $page->{file},
-            '-auto-orient',
-            get_crop_args( $page ),
-            '+repage',
-            '-colorspace' => 'gray',
-            '-blur' => '0x10',
-            $page->{output}
-        );
-    }, sub {
-        my ($q) = @_;
-        for my $type ('odd', 'even') {
-            my $name = BookConf->opt( $type . '_blank_page' );
-            my $page = first { $_->{file} eq $name } @pages;
-            if( !$page ) {
-                die "No blank $type page specified in config";
-            }
 
-            my $output = "output/" . $page->{page_type} . '_blank_mask.png';
-            next if -f $output;
-
-            $q->enqueue( {
-                %$page,
-                output => $output
-            });
-        }
-    });
+my @biggest_crop = (0,0);
+for my $page (@pages) {
+    my @item = get_crop_details( $page->{crop_args} );
+    die Dumper($page) if !@item;
+    for( 0,1 ) {
+        $biggest_crop[$_] = $item[$_] if $item[$_] > $biggest_crop[$_];
+    }
 }
 
+my $pdf_page_size = join "x", @biggest_crop;
+#warn $pdf_page_size;
+my $white_background = BookConf->opt( 'white_background' );
+
+my %masks;
+run_multi( sub {
+    my ($page) = @_;
+
+    # XXX unlink at end if dev run
+    runcmd( 'convert',
+        $page->{file},
+        '-auto-orient',
+        @{$page->{crop_args}},
+        '+repage',
+        '-colorspace' => 'gray',
+        '-blur' => '0x10',
+        $page->{output}
+    );
+}, sub {
+    my ($q) = @_;
+    for my $type ('odd', 'even') {
+        my $name = BookConf->opt( $type . '_blank_page' ) or next;
+        my $page = first { $_->{file} eq $name } @pages;
+
+        my $output = "output/" . $page->{page_type} . '_blank_mask.png';
+        $masks{$type} = $output;
+        next if -f $output;
+
+        $q->enqueue( {
+            %$page,
+            output => $output
+        });
+    }
+});
+
 if( 1 ) {
-    run_multi( \&process_whole_page, sub {
-        my ($q) = @_;
-        $q->enqueue( @pages );
-    }, 4/3);
+    run_array( \&process_whole_page, \@pages, 4/3 );
 
     exit;
 }
 
-run_multi( \&process_page, sub {
-    my ($q) = @_;
-    $q->enqueue( @pages );
-}, 4/3);
-
-$return_q->end;
+@pages = run_array( \&process_page, \@pages, 4/3 );
 
 # Combine the text
-@pages = ();
-while( defined( my $item = $return_q->dequeue ) ) {
-    push @pages, $item;
-}
 @pages = sort { $a->{num} <=> $b->{num} } @pages;
 for my $page ( @pages ) {
     print "---- page $page->{num} ----\n", $page->{text}, "\n";
@@ -142,10 +145,10 @@ sub process_page {
                 '-colorspace' => 'gray',
         );
 
-        if( !$white_background ) {
+        if( my $maskf = $masks{$page->{page_type}} ) {
             push @cmd,
                 # Now combine in mask image
-                'output/' . $page->{page_type} . '_blank_mask.png',
+                $maskf,
                 '-compose' => 'Divide_Src', '-composite';
 
         }
@@ -155,7 +158,7 @@ sub process_page {
             #qw< -level 50%,90% -morphology erode rectangle:6x1 >,
             #'-level' => '83%,92%',
 
-            '-level' => '90%,98%',
+            '-level' => BookConf->opt('level'),
 
             #'-morphology' => 'thicken' => '3x1:1,0,1',
             
@@ -172,15 +175,14 @@ sub process_page {
         'mark';
 
     my $real_txt = $txtfile->filename . ".txt";
-    $return_q->enqueue( {
-        %$page,
-        text => path( $real_txt )->slurp_utf8
-    });
+
+    $page->{text} = path( $real_txt )->slurp_utf8;
     #print path( $real_txt )->slurp_utf8, "\n";
 
     unlink $real_txt;
 
     #print Dumper $page;
+    return $page;
 }
 
 sub get_crop_args {
@@ -188,7 +190,7 @@ sub get_crop_args {
     my $type = $page->{page_type};
 
     if( my $crop = BookConf->opt( $type . '_page_crop' ) ) {
-        return -crop => $crop;
+        return [ -crop => $crop ];
     }
 
     my $autoimg = tmpfile(
@@ -228,11 +230,12 @@ sub get_crop_args {
     #}
 
     # Shrink the crop area by a few px
-    $points[$_]{x} += 10 for 0,2;
-    $points[$_]{x} -= 10 for 1,3;
+    my $crop_inside = 50;
+    $points[$_]{x} += $crop_inside for 0,2;
+    $points[$_]{x} -= $crop_inside for 1,3;
 
-    $points[$_]{y} += 10 for 0,1;
-    $points[$_]{y} -= 10 for 2,3;
+    $points[$_]{y} += $crop_inside for 0,1;
+    $points[$_]{y} -= $crop_inside for 2,3;
 
     # Get surrounding rectangle points
     my (%min, %max, %wh);
@@ -261,9 +264,10 @@ sub get_crop_args {
             @{$real_points[$i]}{qw< x y>};
     }
 
-    return
+    return [
         -crop => $crop,
-        '-distort' => 'BilinearReverse' => $distort;
+        '-distort' => 'BilinearReverse' => $distort
+    ];
 }
 
 sub process_whole_page {
@@ -282,33 +286,40 @@ sub process_whole_page {
     }
 
     if( !-f $outimg ) {
-        my @crop_args = get_crop_args( $page ) or return;
-
         my @cmd = (
             'convert',
                 $page->{file},
                 '-auto-orient',
-                @crop_args,
+
+                # Figure out crop bounds so that we get the page in a picture, straighten it and turn it gray
+                @{ $page->{crop_args} },
                 '-deskew' => '80%',
                 '+repage',
 
                 '-colorspace' => 'gray',
         );
 
-        if( !$white_background ) {
+        # Use a merge to try to get rid of background if necessary
+        if( my $maskf = $masks{$page->{page_type}} ) {
+            my ($w, $h) = get_crop_details( $page->{crop_args} ) or die;
             push @cmd,
-                # Now combine in mask image
-                'output/' . $page->{page_type} . '_blank_mask.png',
+                $maskf,
+
+                # Page detection algorithm has page sizes a bit differently but
+                # they should all be pretty similar. Scale the background map
+                # to the same size as this page so that we dont get white
+                # background but some dark edges.
+                '-resize' => "${w}x${h}\!",
                 '-compose' => 'Divide_Src', '-composite';
 
         }
 
+        # Now mask out anything that doesnt look like text to give nice white background
         push @cmd,
-            # Now mask out anything that doesnt look like text to give nice smooth white background
             '(',
                 qw< +clone -contrast-stretch 0.5%x60% -morphology erode:3 disk -threshold 80% -blur 0x5 -threshold 80% -negate -write mpr:mask >,
             ')',
-            #-lat => '30x30,-1%',
+            #-lat => '30x30,-1%',       # adaptive thresholding here if needed
             qw< -mask mpr:mask -threshold -1 +mask -delete 1 >
             ;
 
@@ -319,7 +330,7 @@ sub process_whole_page {
             #'-level' => '83%,92%',
 
             #'-level' => '90%,98%', # vaaz
-            '-level' => '85%,95%',
+            '-level' => BookConf->opt('level'),
             $tmpimg;
 
         runcmd @cmd;
@@ -380,6 +391,7 @@ sub process_whole_page {
 
     #return;
 
+    # Convert to an OCR'd PDF
     runcmd
         'tesseract',
         '-l' => 'mark',
@@ -412,6 +424,27 @@ sub run_multi {
     $_->join for @thr;
 }
 
+sub run_array {
+    my ($sub, $items, @args) = @_;
+    my $return_q = Thread::Queue->new;
+
+    run_multi( sub {
+        my ($item) = @_;
+        my $ret = $sub->( { %$item } );
+        $return_q->enqueue( $ret ) if $ret;
+    }, sub {
+        my ($q) = @_;
+        $q->enqueue( @$items );
+    }, @args );
+
+    $return_q->end;
+    my @ret;
+    while( defined( my $item = $return_q->dequeue ) ) {
+        push @ret, $item;
+    }
+    return @ret;
+}
+
 sub tmpfile {
     my %ARGS = @_;
     return File::Temp->new(
@@ -419,4 +452,14 @@ sub tmpfile {
         UNLINK => 1,
         %ARGS
     );
+}
+
+sub get_crop_details {
+    my ($c) = @_;
+    for( my $i = 0; $i < @$c; $i++ ) {
+        if( $c->[$i] eq '-crop' ) {
+            return ( $c->[$i+1] =~ /^(\d+)x(\d+) (?: \+(\d+)\+(\d+) )?/x );
+        }
+    }
+    return ();
 }
