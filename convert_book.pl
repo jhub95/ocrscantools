@@ -17,28 +17,39 @@ binmode \*STDOUT => 'utf8';
 
 my $DEBUG = 1;
 
+my $path = BookConf->opt( 'path' ) || '.';
 my @pages;
-for(<*.jpg>) {
-    next unless /^0*(\d+)\.jpg$/i;
-    push @pages, {
-        num => $1,
-        file => $_,
-        page_type => $1 % 2 ? 'odd' : 'even'
-    };
-}
-#@pages = sort { $a->{num} <=> $b->{num} } @pages;
+my $DUMP_FILE = 'pages.dump';
 
-if( $DEBUG ) {
-    mkdir "output";
-    mkdir "page_output";
+for( qw< output page_output > ) {
+    mkdir $_ if !-d;
 }
 
-# autodetect crops for each page and find the largest width and height
-@pages = run_array( sub {
-    my ($page) = @_;
-    $page->{crop_args} = get_crop_args( $page ) or return;
-    return $page;
-}, \@pages );
+if( -f $DUMP_FILE ) {
+    our $VAR1;
+    require $DUMP_FILE;
+    @pages = @$VAR1;
+} else {
+    for( glob "$path/*.jpg") {
+        next unless m!(?: /|^ ) 0*(\d+)\.jpg$!xi;
+        push @pages, {
+            num => $1,
+            file => $_,
+            page_type => $1 % 2 ? 'odd' : 'even'
+        };
+    }
+    #@pages = sort { $a->{num} <=> $b->{num} } @pages;
+
+    # autodetect crops for each page and find the largest width and height
+    @pages = run_array( sub {
+        my ($page) = @_;
+        $page->{crop_args} = get_crop_args( $page ) or return;
+        return $page;
+    }, \@pages );
+
+    open my $fh, '>', $DUMP_FILE;
+    print $fh Dumper(\@pages);
+}
 
 
 my @biggest_crop = (0,0);
@@ -64,7 +75,6 @@ run_multi( sub {
         '-auto-orient',
         @{$page->{crop_args}},
         '+repage',
-        '-colorspace' => 'gray',
         '-blur' => '0x10',
         $page->{output}
     );
@@ -72,9 +82,11 @@ run_multi( sub {
     my ($q) = @_;
     for my $type ('odd', 'even') {
         my $name = BookConf->opt( $type . '_blank_page' ) or next;
-        my $page = first { $_->{file} eq $name } @pages;
+        my $page = first { $_->{file} eq "$path/$name" } @pages;
 
         my $output = "output/" . $page->{page_type} . '_blank_mask.png';
+        use Data::Dumper;
+        print Dumper $page;
         $masks{$type} = $output;
         next if -f $output;
 
@@ -86,12 +98,12 @@ run_multi( sub {
 });
 
 if( 1 ) {
-    run_array( \&process_whole_page, \@pages, 4/3 );
+    run_array( \&process_page_pdf, \@pages, 4/3 );
 
     exit;
 }
 
-@pages = run_array( \&process_page, \@pages, 4/3 );
+@pages = run_array( \&process_page_txt, \@pages, 4/3 );
 
 # Combine the text
 @pages = sort { $a->{num} <=> $b->{num} } @pages;
@@ -116,73 +128,6 @@ sub runcmd {
             warn sprintf "child exited with value %d\n", $val;
         }
     }
-}
-
-sub process_page {
-    my ($page) = @_;
-
-    my $crop = BookConf->opt( $page->{page_type} . '_ocr_crop' );
-
-    my ($tmpimg, $outimg);
-    my $OUT_EXT = "png";
-    if( $DEBUG ) {
-        $outimg = sprintf "output/%03d.%s", $page->{num}, $OUT_EXT;
-    } else {
-        # keep in scope so doesnt get deleted
-        $tmpimg = tmpfile(
-            SUFFIX => "." . $OUT_EXT
-        );
-        $outimg = $tmpimg->filename
-    }
-
-    if( !-f $outimg ) {
-        my @cmd = (
-            'convert',
-                $page->{file},
-                '-auto-orient',
-                '-crop' => $crop, '+repage',
-                '-deskew' => '80%',
-                '-colorspace' => 'gray',
-        );
-
-        if( my $maskf = $masks{$page->{page_type}} ) {
-            push @cmd,
-                # Now combine in mask image
-                $maskf,
-                '-compose' => 'Divide_Src', '-composite';
-
-        }
-
-        push @cmd,
-            # And post-processing
-            #qw< -level 50%,90% -morphology erode rectangle:6x1 >,
-            #'-level' => '83%,92%',
-
-            '-level' => BookConf->opt('level'),
-
-            #'-morphology' => 'thicken' => '3x1:1,0,1',
-            
-            $outimg;
-        runcmd @cmd;
-        #return;
-    }
-
-    my $txtfile = tmpfile();
-    runcmd
-        'tesseract',
-        '-l' => 'mark',
-        $outimg => $txtfile->filename,
-        'mark';
-
-    my $real_txt = $txtfile->filename . ".txt";
-
-    $page->{text} = path( $real_txt )->slurp_utf8;
-    #print path( $real_txt )->slurp_utf8, "\n";
-
-    unlink $real_txt;
-
-    #print Dumper $page;
-    return $page;
 }
 
 sub get_crop_args {
@@ -270,7 +215,7 @@ sub get_crop_args {
     ];
 }
 
-sub process_whole_page {
+sub process_page_pdf {
     my ($page) = @_;
 
     my ($tmpimg, $outimg);
@@ -285,18 +230,19 @@ sub process_whole_page {
         $outimg = $tmpimg->filename
     }
 
+    my $outpdf = sprintf "page_output/%03d", $page->{num};
+
+    my $out_bg_img = sprintf "page_output/%03d_bg.jpg", $page->{num};
     if( !-f $outimg ) {
         my @cmd = (
             'convert',
                 $page->{file},
                 '-auto-orient',
 
-                # Figure out crop bounds so that we get the page in a picture, straighten it and turn it gray
+                # Figure out crop bounds so that we get the page in a picture, straighten it
                 @{ $page->{crop_args} },
                 '-deskew' => '80%',
                 '+repage',
-
-                '-colorspace' => 'gray',
         );
 
         # Use a merge to try to get rid of background if necessary
@@ -315,13 +261,13 @@ sub process_whole_page {
         }
 
         # Now mask out anything that doesnt look like text to give nice white background
-        push @cmd,
-            '(',
-                qw< +clone -contrast-stretch 0.5%x60% -morphology erode:3 disk -threshold 80% -blur 0x5 -threshold 80% -negate -write mpr:mask >,
-            ')',
-            #-lat => '30x30,-1%',       # adaptive thresholding here if needed
-            qw< -mask mpr:mask -threshold -1 +mask -delete 1 >
-            ;
+        #push @cmd,
+        #    '(',
+        #        qw< +clone -contrast-stretch 0.5%x60% -morphology erode:3 disk -threshold 80% -blur 0x5 -threshold 80% -negate -write mpr:mask >,
+        #    ')',
+        #    #-lat => '30x30,-1%',       # adaptive thresholding here if needed
+        #    qw< -mask mpr:mask -threshold -1 +mask -delete 1 >
+        #    ;
 
         my $tmpimg = tmpfile( SUFFIX => ".png" );
         push @cmd,
@@ -329,8 +275,7 @@ sub process_whole_page {
             #qw< -level 50%,90% -morphology erode rectangle:6x1 >,
             #'-level' => '83%,92%',
 
-            #'-level' => '90%,98%', # vaaz
-            '-level' => BookConf->opt('level'),
+            #'-level' => BookConf->opt('level'),
             $tmpimg;
 
         runcmd @cmd;
@@ -348,54 +293,91 @@ sub process_whole_page {
         chomp( my $out = `$cmd` );
         my ($w,$h,$offx,$offy) = split / /, $out;
 
+        # XXX defines the page size in final output
+        my $dpi = 300;
+
         warn "  $outimg: $out\n";
         if( $w < 5 || $h < 5 ) {
-            # XXX image was blank
-            return;
-        } else {
-
-            # Expand a bit to avoid cropping key side stuff (but if
-            # larger than specified image above won't do anything)
-            my $wadd = int($w * 0.03);
-            my $hadd = int($h * 0.03);
-            $_ = $_ < 30 ? $_ : 30 for $wadd, $hadd;    # % or X px minimum expansion
-            $offx -= $wadd;
-            $offy -= $hadd;
-            $w += $wadd*2;
-            $h += $hadd*2;
-
+            # image was blank
             runcmd 'convert',
-                qw< ( -size >, $pdf_page_size, qw< xc:white ) >,   # Create white layer
-
-                # Crop main content to boundaries
-                qw< ( >,
-                    $tmpimg,
-
-                    qw< -crop >, "${w}x${h}+$offx+$offy!",
-
-                    '-flatten', # expand if necessary (to get it centered)
-                    qw< +repage
-                ) >,
-
-                # Set to center
-                qw< -gravity center +geometry >,
-
-                # Merge white and centered content together
-                qw< -composite >,
-
+                qw< ( -page >, $pdf_page_size, qw< xc:white ) >,   # Create single white pixel on PDF page (actually can do without this but probably not with convert tool)
                 '+repage',
 
-                $outimg;
-        }
-    }
+                # ppi here is needed for work with leptonica ie tesseract
+                qw< -units PixelsPerInch >,
+                '-density' => $dpi,
 
-    #return;
+                $outpdf . ".pdf";
+
+            return;
+        }
+
+        # Expand a bit to avoid cropping key side stuff (but if
+        # larger than specified image above won't do anything)
+        my $wadd = int($w * 0.03);
+        my $hadd = int($h * 0.03);
+        $_ = $_ < 30 ? $_ : 30 for $wadd, $hadd;    # % or X px minimum expansion
+        $offx -= $wadd;
+        $offy -= $hadd;
+        $w += $wadd*2;
+        $h += $hadd*2;
+
+        runcmd 'convert',
+            qw< ( -size >, $pdf_page_size, qw< xc:white ) >,   # Create white layer. XXX do this transparent?
+
+            # Crop main content to boundaries
+            qw< ( >,
+                $tmpimg,
+
+                qw< -crop >, "${w}x${h}+$offx+$offy!",
+
+                '-flatten', # expand if necessary (to get it centered)
+                qw< +repage
+            ) >,
+
+            # Set to center
+            qw< -gravity center +geometry >,
+
+            # Merge white and centered content together
+            qw< -composite >,
+
+            '+repage',
+
+            # ppi here is needed for work with leptonica ie tesseract
+            #qw< -units PixelsPerInch >,
+            #'-density' => $dpi,
+
+            $outimg;
+
+        # Now output the image that's going to be visible to the user - loose
+        # some resolution but keep the dimensions the same
+        my $out_ppi = 140;   # Actually choose whatever
+        my $scale = sprintf "%0.2f%%", $out_ppi / $dpi * 100;
+        runcmd 'convert', $outimg,
+            qw< -quality 80 -units PixelsPerInch -background white -density > => $out_ppi,
+            '-scale' => $scale,
+            $out_bg_img;
+
+        # XXX modify outimg by eg bumping up size/dpi or applying level to it in order to get it working better with tesseract?
+
+        runcmd 'convert', $outimg,
+            '-level' => BookConf->opt('level') || '0%,100%',
+            $tmpimg;
+        runcmd 'python', $FindBin::Bin . '/extract_text.py', $tmpimg, $tmpimg;
+        runcmd 'convert', $tmpimg,
+            # ppi here is needed for work with leptonica ie tesseract
+            qw< -units PixelsPerInch >,
+            '-density' => $dpi,
+            '+repage',
+            $outimg;
+    }
 
     # Convert to an OCR'd PDF
     runcmd
         'tesseract',
+        '-c' => 'pdf_background_image=' . $out_bg_img,
         '-l' => 'mark',
-        $outimg => sprintf( "page_output/%03d", $page->{num} ),
+        $outimg => $outpdf,
         'mark_pdf';
 
     #print Dumper $page;
@@ -463,3 +445,70 @@ sub get_crop_details {
     }
     return ();
 }
+
+sub process_page_txt {
+    my ($page) = @_;
+
+    my $crop = BookConf->opt( $page->{page_type} . '_ocr_crop' );
+
+    my ($tmpimg, $outimg);
+    my $OUT_EXT = "png";
+    if( $DEBUG ) {
+        $outimg = sprintf "output/%03d.%s", $page->{num}, $OUT_EXT;
+    } else {
+        # keep in scope so doesnt get deleted
+        $tmpimg = tmpfile(
+            SUFFIX => "." . $OUT_EXT
+        );
+        $outimg = $tmpimg->filename
+    }
+
+    if( !-f $outimg ) {
+        my @cmd = (
+            'convert',
+                $page->{file},
+                '-auto-orient',
+                '-crop' => $crop, '+repage',
+                '-deskew' => '80%',
+        );
+
+        if( my $maskf = $masks{$page->{page_type}} ) {
+            push @cmd,
+                # Now combine in mask image
+                $maskf,
+                '-compose' => 'Divide_Src', '-composite';
+
+        }
+
+        push @cmd,
+            # And post-processing
+            #qw< -level 50%,90% -morphology erode rectangle:6x1 >,
+            #'-level' => '83%,92%',
+
+            '-level' => BookConf->opt('level'),
+
+            #'-morphology' => 'thicken' => '3x1:1,0,1',
+            
+            $outimg;
+        runcmd @cmd;
+        #return;
+    }
+
+    my $txtfile = tmpfile();
+    runcmd
+        'tesseract',
+        '-l' => 'mark',
+        $outimg => $txtfile->filename,
+        'mark';
+
+    my $real_txt = $txtfile->filename . ".txt";
+
+    $page->{text} = path( $real_txt )->slurp_utf8;
+    #print path( $real_txt )->slurp_utf8, "\n";
+
+    unlink $real_txt;
+
+    #print Dumper $page;
+    return $page;
+}
+

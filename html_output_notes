@@ -1,0 +1,8 @@
+baseapi TessBaseAPI::GetComponentImages seems to produce a load of all of the images - can rewrite this in a module & filter for stuff that hasnt been detected as text
+
+add sth to TessBaseAPI::NewRenderer
+
+renderer.cpp has the hocr very basic impl but the guts is in TessBaseAPI::GetHOCRText - can copy this and extend it a bit.
+
+hocr should support all this stuff *but* no tools available for hocr so probably best to just do out own HTML outputter
+Vapourware: see https://www.openhub.net/p/hocr-tools esp hocr-as-absolute-html/hocr-as-simple-html look interesting. Can integrate into tesseract?
