@@ -20,17 +20,17 @@ my $s = BookScan->new(
 );
 
 my $conf = 'BookConf';
-my $path = $conf->opt( 'path' ) || 'raw';
+
+my $INPUT_PATH = $conf->opt( 'path' ) || 'raw';
 my $DUMP_FILE = 'pages.dump';
-my ($pdf_page_size, $masks);
 
 my ($cmd) = @ARGV;
 $cmd ||= 'pdf';
 my %cmd = (
     clean => \&clean,
     cleanall => sub { clean(1) },
-    pdf => sub { create_pdf( initial_setup() ) },
-    text => sub { create_text( initial_setup() ) },
+    pdf => \&create_pdf,
+    text => \&create_text,
 );
 if( $cmd{$cmd} ) {
     $cmd{$cmd}->();
@@ -53,13 +53,11 @@ if( $cmd{$cmd} ) {
 # * OCR and create PDF from this
 
 sub initial_setup {
-    my @pages = load_pages($path);
-    check_pages(\@pages);
-    $pdf_page_size = find_biggest_page_size( \@pages );
+    my $pages = load_pages($INPUT_PATH);
+    check_pages($pages);
+    my $masks = generate_masks( $pages, $conf );
 
-    $masks = generate_masks( \@pages, $conf );
-
-    return \@pages;
+    return ($pages, $masks);
 }
 
 sub get_crop_args {
@@ -83,7 +81,7 @@ sub get_crop_args {
 sub runcmd { $s->runcmd( @_ ) }
 
 sub generate_cropped_masked_img {
-    my ($page) = @_;
+    my ($page, $masks) = @_;
     my $cropped_masked_img = $s->_tmp_page_file( 'cropped_masked', $page );
     if( !-f $cropped_masked_img ) {
         my @cmd = (
@@ -118,7 +116,7 @@ sub generate_cropped_masked_img {
 }
 
 sub generate_white_bordered_img {
-    my ($page, $cropped_masked_img, $out_pdf, $dpi) = @_;
+    my ($page, $cropped_masked_img, $pdf_page_size, $out_pdf, $dpi) = @_;
     my $white_bordered_img = $s->_tmp_page_file( 'white_bordered', $page );
     if( !-f $white_bordered_img ) {
         my ($w,$h,$offx,$offy) = find_image_extent( $cropped_masked_img );
@@ -257,12 +255,12 @@ sub generate_ocr_img {
 }
 
 sub create_text {
-    my ($pages) = @_;
+    my ($pages, $masks) = initial_setup();
 
     @$pages = run_array( sub {
         my ($page) = @_;
 
-        my $cropped_masked_img = generate_cropped_masked_img( $page );
+        my $cropped_masked_img = generate_cropped_masked_img( $page, $masks );
         my $ocr_img = generate_ocr_img( $page, $cropped_masked_img, 300 );
 
         my $txt_file_no_ext = $s->output_page_file( 'text', $page, '');
@@ -278,28 +276,29 @@ sub create_text {
         return $page;
     }, $pages, 4/3 );
 
-    # Combine the text
-    @$pages = sort { $a->{num} <=> $b->{num} } @$pages;
+    # Combine and output text
     my $fh = path('book.txt')->openw_utf8;
-    for my $page ( @$pages ) {
+    for my $page ( sort { $a->{num} <=> $b->{num} } @$pages ) {
         my $text = path( $page->{txt_file} )->slurp_utf8;
         $fh->print( "---- page $page->{num} ----\n", $text, "\n" );
     }
 }
 
 sub create_pdf {
-    my ($pages) = @_;
+    my ($pages, $masks) = initial_setup();
+    my $pdf_page_size = find_biggest_page_size( $pages );
+
     @$pages = run_array( sub {
         my ($page) = @_;
-        process_page_pdf($page);
+        process_page_pdf($page, $pdf_page_size, $masks);
         return $page
     }, $pages, 4/3 );
 
-    runcmd 'pdfunite', map({ $_->{pdf_file} } @$pages), 'book.pdf';
+    runcmd 'pdfunite', map({ $_->{pdf_file} } sort { $a->{num} <=> $b->{num} } @$pages), 'book.pdf';
 }
 
 sub process_page_pdf {
-    my ($page) = @_;
+    my ($page, $pdf_page_size, $masks) = @_;
 
     my $out_pdf_noext = $s->output_page_file( 'pdf', $page, '' );
     my $out_pdf = "$out_pdf_noext.pdf";
@@ -309,8 +308,8 @@ sub process_page_pdf {
     # This just defines the page size in final output
     my $dpi = 300;
 
-    my $cropped_masked_img = generate_cropped_masked_img( $page );
-    my $white_bordered_img = generate_white_bordered_img( $page, $cropped_masked_img, $out_pdf, $dpi );
+    my $cropped_masked_img = generate_cropped_masked_img( $page, $masks );
+    my $white_bordered_img = generate_white_bordered_img( $page, $cropped_masked_img, $pdf_page_size, $out_pdf, $dpi );
     return if !$white_bordered_img && -f $out_pdf;  # May shortcut if whole image is white
 
     my $pdf_bg_img = generate_pdf_bg_img( $page, $white_bordered_img, $dpi );
@@ -380,7 +379,7 @@ sub load_pages {
     if( -f $DUMP_FILE ) {
         our $VAR1;
         require $DUMP_FILE;
-        return @$VAR1;
+        return $VAR1;
     }
 
     my @pages;
@@ -404,7 +403,7 @@ sub load_pages {
 
     path($DUMP_FILE)->spew( Dumper(\@pages) );
 
-    return @pages;
+    return \@pages;
 }
 
 sub find_biggest_page_size {
@@ -456,7 +455,7 @@ sub generate_masks {
 
         for my $type ('odd', 'even') {
             my $name = $conf->opt( $type . '_blank_page' ) or next;
-            my $page = first { $_->{file} eq "$path/$name" } @$pages;   # XXX ugh use hash
+            my $page = first { $_->{file} eq "$INPUT_PATH/$name" } @$pages;   # XXX ugh use hash
 
             my $output = $s->_tmp_output_file( 'mask', $page->{page_type} . '_blank_mask.png' );
             #print Dumper $page;
