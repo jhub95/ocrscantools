@@ -22,6 +22,22 @@ my $s = BookScan->new(
 my $conf = 'BookConf';
 my $path = $conf->opt( 'path' ) || 'raw';
 my $DUMP_FILE = 'pages.dump';
+my ($pdf_page_size, $masks);
+
+my ($cmd) = @ARGV;
+$cmd ||= 'pdf';
+my %cmd = (
+    clean => \&clean,
+    cleanall => sub { clean(1) },
+    pdf => sub { create_pdf( initial_setup() ) },
+    text => sub { create_text( initial_setup() ) },
+);
+if( $cmd{$cmd} ) {
+    $cmd{$cmd}->();
+} else {
+    warn "$0: Unknown command '$cmd' - please specify one of " . join(", ", sort keys %cmd) . "\n";
+    exit 1;
+}
 
 # Process:
 # * Detect crops/distortion info
@@ -36,27 +52,14 @@ my $DUMP_FILE = 'pages.dump';
 # * Output large png for tesseract to OCR, look at doing some other cleanups prior to OCR
 # * OCR and create PDF from this
 
-my @pages = load_pages($path);
-check_pages(\@pages);
-my $pdf_page_size = find_biggest_page_size( \@pages );
+sub initial_setup {
+    my @pages = load_pages($path);
+    check_pages(\@pages);
+    $pdf_page_size = find_biggest_page_size( \@pages );
 
-#warn $pdf_page_size;
-#my $white_background = $conf->opt( 'white_background' );
+    $masks = generate_masks( \@pages, $conf );
 
-my $masks = generate_masks( \@pages, $conf );
-
-if( 1 ) {
-    run_array( \&process_page_pdf, \@pages, 4/3 );
-
-    exit;
-}
-
-@pages = run_array( \&process_page_txt, \@pages, 4/3 );
-
-# Combine the text
-@pages = sort { $a->{num} <=> $b->{num} } @pages;
-for my $page ( @pages ) {
-    print "---- page $page->{num} ----\n", $page->{text}, "\n";
+    return \@pages;
 }
 
 sub get_crop_args {
@@ -174,14 +177,14 @@ sub generate_white_bordered_img {
 }
 
 sub generate_pdf_bg_img {
-    my ($page, $white_bordered_img, $dpi) = @_;
+    my ($page, $input_img, $dpi) = @_;
     my $pdf_bg_img = $s->_tmp_page_file( 'pdf_bg', $page, '.jpg' );
     if( !-f $pdf_bg_img ) {
         # Set pic to grayscale (1/3, 1/3, 1/3) and subtract it from the
         # original, then cut out some fuzz. If there are non-grayscale colors
         # over larger areas there will be a maxima here which we can pick up
         # on.
-        my $is_grayscale = is_grayscale( $white_bordered_img );
+        my $is_grayscale = is_grayscale( $input_img );
 
         # Now output the image that's going to be visible to the user - loose
         # some resolution but keep the dimensions the same
@@ -192,7 +195,7 @@ sub generate_pdf_bg_img {
         my $out_dpi = 140;   
         my $scale = sprintf "%0.2f%%", $out_dpi / $dpi * 100;
 
-        runcmd 'convert', $white_bordered_img,
+        runcmd 'convert', $input_img,
 
             # XXX need to look to see if we can reduce/increase the quality...
             -quality => $is_grayscale ? 40 : 50,
@@ -215,11 +218,11 @@ sub generate_pdf_bg_img {
 }
 
 sub generate_ocr_img {
-    my ($page, $white_bordered_img, $dpi) = @_;
+    my ($page, $input_img, $dpi) = @_;
     my $ocr_img = $s->_tmp_page_file( 'ocr_img', $page );
     if( !-f $ocr_img ) {
         my $tmpimg = $s->_tmpfile( 'ocr_cleanup', '.png' );
-        runcmd 'convert', $white_bordered_img,
+        runcmd 'convert', $input_img,
 
             # Stretch black and white in the image - this needs to be detected
             # on each book/page to figure out what is best for tessearct but
@@ -253,11 +256,54 @@ sub generate_ocr_img {
     return $ocr_img
 }
 
+sub create_text {
+    my ($pages) = @_;
+
+    @$pages = run_array( sub {
+        my ($page) = @_;
+
+        my $cropped_masked_img = generate_cropped_masked_img( $page );
+        my $ocr_img = generate_ocr_img( $page, $cropped_masked_img, 300 );
+
+        my $txt_file_no_ext = $s->output_page_file( 'text', $page, '');
+        $page->{txt_file} = "$txt_file_no_ext.txt";
+        if( !-f $page->{txt_file} ) {
+            runcmd
+                'tesseract',
+                '-l' => 'mark',
+                $ocr_img => $txt_file_no_ext,
+                'mark';
+        }
+
+        return $page;
+    }, $pages, 4/3 );
+
+    # Combine the text
+    @$pages = sort { $a->{num} <=> $b->{num} } @$pages;
+    my $fh = path('book.txt')->openw_utf8;
+    for my $page ( @$pages ) {
+        my $text = path( $page->{txt_file} )->slurp_utf8;
+        $fh->print( "---- page $page->{num} ----\n", $text, "\n" );
+    }
+}
+
+sub create_pdf {
+    my ($pages) = @_;
+    @$pages = run_array( sub {
+        my ($page) = @_;
+        process_page_pdf($page);
+        return $page
+    }, $pages, 4/3 );
+
+    runcmd 'pdfunite', map({ $_->{pdf_file} } @$pages), 'book.pdf';
+}
+
 sub process_page_pdf {
     my ($page) = @_;
 
     my $out_pdf_noext = $s->output_page_file( 'pdf', $page, '' );
     my $out_pdf = "$out_pdf_noext.pdf";
+    $page->{pdf_file} = $out_pdf;
     return if -f $out_pdf;
 
     # This just defines the page size in final output
@@ -329,72 +375,6 @@ sub run_array {
     return @ret;
 }
 
-sub process_page_txt {
-    my ($page) = @_;
-
-    my $crop = $conf->opt( $page->{page_type} . '_ocr_crop' );
-
-    my ($tmpimg, $outimg);
-    my $OUT_EXT = "png";
-    if( $DEBUG ) {
-        $outimg = sprintf "output/%03d.%s", $page->{num}, $OUT_EXT;
-    } else {
-        # keep in scope so doesnt get deleted
-        $tmpimg = tmpfile(
-            SUFFIX => "." . $OUT_EXT
-        );
-        $outimg = $tmpimg->filename
-    }
-
-    if( !-f $outimg ) {
-        my @cmd = (
-            'convert',
-                $page->{file},
-                '-auto-orient',
-                '-crop' => $crop, '+repage',
-                '-deskew' => '80%',
-        );
-
-        if( my $maskf = $masks->{$page->{page_type}} ) {
-            push @cmd,
-                # Now combine in mask image
-                $maskf,
-                '-compose' => 'Divide_Src', '-composite';
-
-        }
-
-        push @cmd,
-            # And post-processing
-            #qw< -level 50%,90% -morphology erode rectangle:6x1 >,
-            #'-level' => '83%,92%',
-
-            '-level' => $conf->opt('level'),
-
-            #'-morphology' => 'thicken' => '3x1:1,0,1',
-            
-            $outimg;
-        runcmd @cmd;
-        #return;
-    }
-
-    my $txtfile = tmpfile();
-    runcmd
-        'tesseract',
-        '-l' => 'mark',
-        $outimg => $txtfile->filename,
-        'mark';
-
-    my $real_txt = $txtfile->filename . ".txt";
-
-    $page->{text} = path( $real_txt )->slurp_utf8;
-    #print path( $real_txt )->slurp_utf8, "\n";
-
-    unlink $real_txt;
-
-    #print Dumper $page;
-    return $page;
-}
-
 sub load_pages {
     my ($path) = @_;
     if( -f $DUMP_FILE ) {
@@ -422,8 +402,7 @@ sub load_pages {
     }, \@pages );
     @pages = sort { $a->{num} <=> $b->{num} } @pages;
 
-    open my $fh, '>', $DUMP_FILE;
-    print $fh Dumper(\@pages);
+    path($DUMP_FILE)->spew( Dumper(\@pages) );
 
     return @pages;
 }
@@ -472,6 +451,9 @@ sub generate_masks {
         );
     }, sub {
         my ($q) = @_;
+
+        return if $conf->opt( 'white_background' );
+
         for my $type ('odd', 'even') {
             my $name = $conf->opt( $type . '_blank_page' ) or next;
             my $page = first { $_->{file} eq "$path/$name" } @$pages;   # XXX ugh use hash
@@ -529,8 +511,15 @@ sub is_grayscale {
     return $max_color_diff < 0.05;
 }
 
-sub tmpfile {
-    my %ARGS = @_;
-    $s->_tmpfile( 'tmp', delete($ARGS{SUFFIX}) || '', %ARGS);
-}
+sub clean {
+    my ($extra) = @_;
+    my @tmp = glob 'tmp-*';
+    push @tmp, $DUMP_FILE, qw< pdf text > if $extra;
 
+    for my $f (@tmp) {
+        path($f)->remove_tree if -d $f;
+        path($f)->remove if -f $f;
+    }
+
+    exit;
+}

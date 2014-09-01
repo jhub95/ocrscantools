@@ -68,7 +68,10 @@ point_list findSquares( Mat& image )
                 // apply threshold if l!=0:
                 //     tgray(x,y) = gray(x,y) < (l+1)*255/N ? 255 : 0
                 //adaptiveThreshold( gray0, gray, 255.0, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY, 7, 40 );
+
+                // Produces 1-bit output image
                 gray = gray0 > 180;
+
                 /*
                 imshow( "blah", gray );
                 waitKey(0);

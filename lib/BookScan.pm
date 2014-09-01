@@ -116,7 +116,7 @@ sub runcmd {
 sub _tmpfile {
     my ($self, $name, $ext, %extra) = @_;
     return File::Temp->new(
-        TEMPLATE => $name . '-XXXXXXXX',
+        TEMPLATE => 'tmp-' . $name . '-XXXXXXXX',
         UNLINK => 1,
         SUFFIX => $ext,
         %extra

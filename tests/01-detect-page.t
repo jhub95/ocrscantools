@@ -2,13 +2,13 @@ use strict;
 use warnings;
 use FindBin::libs qw(use export);
 use BookScan;
-use Test::More tests => 11;
+use Test::More tests => 12;
 use Test::Differences;
 
 my $BASE = "$lib[0]/../tests";
 my $TEST_DIR = "$BASE/detect_page";
 my $b = BookScan->new(
-    AUTOCROP_DEBUG => 1
+    #AUTOCROP_DEBUG => 1
 );
 
 sub test_crop_detect {
@@ -19,9 +19,8 @@ sub test_crop_detect {
         "$f should have crop detection correct";
 }
 
-test_crop_detect( [ 'color_crop_01.jpg', '94.5%x100%+0+0', 'even' ], [
-]);
-exit;
+# Ones that have issues but can't find an easy fix:
+test_crop_detect( [ 'color_crop_01.jpg', '94.5%x100%+0+0', 'even' ], [ ]);
 test_crop_detect( [ 'fullscreen_color_nocrop_02.jpg' ], [ ]);
 
 test_crop_detect( [ 'normal_nocrop_01.jpg' ], [
