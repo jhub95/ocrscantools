@@ -19,7 +19,7 @@ my $b = BookScan->new(
     DEBUG => $DEBUG
 );
 
-my $path = BookConf->opt( 'path' ) || '.';
+my $path = BookConf->opt( 'path' ) || 'raw';
 my @pages;
 my $DUMP_FILE = 'pages.dump';
 
@@ -32,7 +32,7 @@ if( -f $DUMP_FILE ) {
     require $DUMP_FILE;
     @pages = @$VAR1;
 } else {
-    for( glob "$path/raw/*.jpg") {
+    for( glob "$path/*.jpg") {
         next unless m!(?: /|^ ) 0*(\d+)\.jpg$!xi;
         push @pages, {
             num => $1,
@@ -123,13 +123,14 @@ sub get_crop_args {
         return [ -crop => $crop ];
     }
 
-    my @dim = $b->auto_crop_detect( $page->{file}, BookConf->opt( $type . "_detect_crop" ), $type )
+    my @corners = $b->auto_crop_detect( $page->{file}, BookConf->opt( $type . "_detect_crop" ), $type )
         or return;
 
     # Now have 4 points of the corners. Figure out the big rectangle
     # surrounding them, crop, and then move the points to fill the whole
     # square image
-    my @points = sort { $a->{y} <=> $b->{y} } map { my ($x,$y) = split ' '; { x => $x, y => $y } } @dim;
+    my @points = sort { $a->{y} <=> $b->{y} } @corners;
+    print Dumper \@points;
 
     # top-left top-right bottom-left bottom-right
     @points = (

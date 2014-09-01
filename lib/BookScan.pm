@@ -30,7 +30,7 @@ sub auto_crop_detect {
         warn "Page dimensions not found for $file\n";
     }
 
-    return @corners;
+    return map { my ($x,$y) = split ' '; { x => $x, y => $y } } @corners;
 }
 
 sub runcmd {
