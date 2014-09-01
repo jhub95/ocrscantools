@@ -215,7 +215,8 @@ for chan in cv2.split(img):
 img = []    # free it
 
 # Smooth out gaps
-edges = cv2.morphologyEx( edges, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3)) );
+# Required on lighter pictures (?)
+#edges = cv2.morphologyEx( edges, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3)) );
 if DEBUG:
     cv2.imwrite('edges.png', edges)
 #sys.exit();

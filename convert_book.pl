@@ -9,13 +9,15 @@ use Data::Dumper;
 use Thread::Queue;
 use Sys::CpuAffinity;
 use File::Temp ();
-
-use FindBin;
-use lib $FindBin::Bin;
+use FindBin::libs;
+use BookScan;
 use BookConf;
 binmode \*STDOUT => 'utf8';
 
 my $DEBUG = 1;
+my $b = BookScan->new(
+    DEBUG => $DEBUG
+);
 
 my $path = BookConf->opt( 'path' ) || '.';
 my @pages;
@@ -30,7 +32,7 @@ if( -f $DUMP_FILE ) {
     require $DUMP_FILE;
     @pages = @$VAR1;
 } else {
-    for( glob "$path/*.jpg") {
+    for( glob "$path/raw/*.jpg") {
         next unless m!(?: /|^ ) 0*(\d+)\.jpg$!xi;
         push @pages, {
             num => $1,
@@ -111,24 +113,7 @@ for my $page ( @pages ) {
     print "---- page $page->{num} ----\n", $page->{text}, "\n";
 }
 
-sub runcmd {
-    my (@cmd) = @_;
-
-    warn "@cmd\n" if $DEBUG;
-    system @cmd;
-
-    if ($? == -1) {
-        warn "failed to execute: $!\n";
-    } elsif ($? & 127) {
-        warn sprintf "child died with signal %d, %s coredump\n",
-           ($? & 127),  ($? & 128) ? 'with' : 'without';
-    } else {
-        my $val = $? >> 8;
-        if( $val != 0 ) {
-            warn sprintf "child exited with value %d\n", $val;
-        }
-    }
-}
+sub runcmd { $b->runcmd( @_ ) }
 
 sub get_crop_args {
     my ($page) = @_;
@@ -138,26 +123,8 @@ sub get_crop_args {
         return [ -crop => $crop ];
     }
 
-    my $autoimg = tmpfile(
-        SUFFIX => ".jpg"
-    );
-    my @cmd = (
-        'convert', $page->{file}, '-auto-orient'
-    );
-    if( my $crop = BookConf->opt( $type . "_detect_crop" ) ) {
-        if( $type eq 'odd' ) {
-            # XXX need to adjust output params
-            push @cmd, qw< -gravity NorthEast >
-        }
-        push @cmd, -crop => $crop;
-    }
-    push @cmd, $autoimg;
-    runcmd @cmd;
-    chomp( my @dim = `$FindBin::Bin/detect_page $autoimg` );
-    if( !@dim ) {
-        warn "Page dimensions not found for $page->{file}\n";
-        return;
-    }
+    my @dim = $b->auto_crop_detect( $page->{file}, BookConf->opt( $type . "_detect_crop" ), $type )
+        or return;
 
     # Now have 4 points of the corners. Figure out the big rectangle
     # surrounding them, crop, and then move the points to fill the whole
@@ -349,26 +316,54 @@ sub process_page_pdf {
 
             $outimg;
 
+        # Set pic to grayscale (1/3, 1/3, 1/3) and subtract it from the
+        # original, then cut out some fuzz. If there are non-grayscale colors
+        # over larger areas there will be a maxima here which we can pick up
+        # on.
+        my @perhaps_grayscale;
+        my $max_color_diff = `convert $outimg -scale 25% \\( +clone -modulate 100,0 \\) -compose Difference -composite -level 10% -format '%[fx:maxima]' info:`;
+        if( $max_color_diff < 0.05 ) {
+            @perhaps_grayscale = qw< -colorspace gray >;
+        }
+
         # Now output the image that's going to be visible to the user - loose
         # some resolution but keep the dimensions the same
         my $out_ppi = 140;   # Actually choose whatever
         my $scale = sprintf "%0.2f%%", $out_ppi / $dpi * 100;
         runcmd 'convert', $outimg,
             qw< -quality 80 -units PixelsPerInch -background white -density > => $out_ppi,
+            '-level' => BookConf->opt('output-level') || '50%,98%',
+            @perhaps_grayscale,
             '-scale' => $scale,
             $out_bg_img;
 
         # XXX modify outimg by eg bumping up size/dpi or applying level to it in order to get it working better with tesseract?
+        my $outimg2 = sprintf "page_output/%03d_tmp.%s", $page->{num}, $OUT_EXT;
+        # XXX or tmpimg
 
         runcmd 'convert', $outimg,
-            '-level' => BookConf->opt('level') || '0%,100%',
-            $tmpimg;
-        runcmd 'python', $FindBin::Bin . '/extract_text.py', $tmpimg, $tmpimg;
-        runcmd 'convert', $tmpimg,
+            '-level' => BookConf->opt('level') || '50%,98%',
+            $outimg2;
+
+        # XXX check that this algorithm actually improves quality over a wide range of sources
+        #runcmd 'python', $FindBin::Bin . '/extract_text.py', $tmpimg, $tmpimg;
+        #runcmd $FindBin::Bin . '/../DetectText/DetectText', $outimg2, $outimg2, 1;
+
+        # XXX See what qw< -filter triangle -resize 300% > does - reported to work well (http://stb-tester.com/blog/2014/04/14/improving-ocr-accuracy.html)
+        runcmd 'convert',
+            $outimg2,
+
+            #convert page_output/004.png \( output/004_tmp.png -modulate 80% -blur 3 \) -compose Soft_Light -composite t.jpg also a possibility
+
+            #'(', $outimg, qw< -colorspace gray ) >,
+            #'(', $outimg2, qw< -morphology erode disk:3 -negate ) -compose Divide_Src -composite >,
+
             # ppi here is needed for work with leptonica ie tesseract
             qw< -units PixelsPerInch >,
-            '-density' => $dpi,
-            '+repage',
+
+            qw< -filter triangle -resize 300% >,
+            '-density' => $dpi * 3,
+            #'+repage',
             $outimg;
     }
 
