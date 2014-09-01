@@ -14,9 +14,8 @@ use BookScan;
 use BookConf;
 binmode \*STDOUT => 'utf8';
 
-my $DEBUG = 1;
 my $s = BookScan->new(
-    DEBUG => $DEBUG
+    DEBUG => 1
 );
 
 my $conf = 'BookConf';
@@ -40,17 +39,17 @@ if( $cmd{$cmd} ) {
 }
 
 # Process:
-# * Detect crops/distortion info
-# * Work out general page size from this
+# * Detect crops/distortion info (done in load_pages())
+# * PDF Only: Work out general page size from this (done in find_biggest_page_size())
 # * XXX go through and auto-detect white pages from the crop details, use these for page masks
-# * Create page mask to turn background into white
-# * Crop/distort/mask pages appropriately
-# * Detect any pure white pages and create dummy PDF for them
-# * Crop any white edges off pages to reduce image size
-# * Figure out if page is grayscale or not in order to reduce output size/complexity
-# * Output small jpg for base of PDF
-# * Output large png for tesseract to OCR, look at doing some other cleanups prior to OCR
-# * OCR and create PDF from this
+# * Create page mask to turn background into white (done in generate_masks())
+# * Crop/distort/mask pages appropriately (done in generate_cropped_masked_img())
+# * PDF Only: Detect any pure white pages and create dummy PDF for them (done in generate_white_bordered_img())
+# * PDF Only Crop any white edges off pages to reduce image size (done in generate_white_bordered_img())
+# * PDF Only: Figure out if page is grayscale or not in order to reduce output size/complexity (done in generate_pdf_bg_img())
+# * PDF Only: Output small jpg for base of PDF (done in generate_pdf_bg_img())
+# * Output large png for tesseract to OCR, look at doing some other cleanups prior to OCR (done in generate_ocr_img())
+# * OCR and create output file from this (create_pdf() or create_text())
 
 sub initial_setup {
     my $pages = load_pages($INPUT_PATH);
@@ -65,6 +64,7 @@ sub get_crop_args {
     my $page_type = $page->{page_type};
 
     if( my $crop = $conf->opt( $page_type . '_page_crop' ) ) {
+        warn "Manual crop specified";
         $page->{im_crop_args} = [ -crop => $crop ];
         $page->{crop_details} = [ $crop =~ /^(\d+)x(\d+) (?: \+(\d+)\+(\d+) )?/x ];
     } else {
@@ -216,8 +216,14 @@ sub generate_pdf_bg_img {
 }
 
 sub generate_ocr_img {
-    my ($page, $input_img, $dpi) = @_;
-    my $ocr_img = $s->_tmp_page_file( 'ocr_img', $page );
+    my ($type, $page, $input_img, $dpi) = @_;
+
+    # If we did this for PDF previously use that file, otherwise if there was
+    # something for text we cant use that for PDF.
+    my $ocr_img = $s->_tmp_page_file( "ocr-img-$type" , $page );
+    if( $type eq 'text' && !-f $ocr_img ) {
+        $ocr_img = $s->_tmp_page_file( "ocr-img-pdf" , $page );
+    }
     if( !-f $ocr_img ) {
         my $tmpimg = $s->_tmpfile( 'ocr_cleanup', '.png' );
         runcmd 'convert', $input_img,
@@ -261,7 +267,10 @@ sub create_text {
         my ($page) = @_;
 
         my $cropped_masked_img = generate_cropped_masked_img( $page, $masks );
-        my $ocr_img = generate_ocr_img( $page, $cropped_masked_img, 300 );
+        # Because we skip a few stages here (not doing white masks etc) the PDF
+        # version cannot use our generated OCR images here but we can use the
+        # version that was created for the PDF
+        my $ocr_img = generate_ocr_img( 'text', $page, $cropped_masked_img, 300 );
 
         my $txt_file_no_ext = $s->output_page_file( 'text', $page, '');
         $page->{txt_file} = "$txt_file_no_ext.txt";
@@ -313,7 +322,7 @@ sub process_page_pdf {
     return if !$white_bordered_img && -f $out_pdf;  # May shortcut if whole image is white
 
     my $pdf_bg_img = generate_pdf_bg_img( $page, $white_bordered_img, $dpi );
-    my $ocr_img = generate_ocr_img( $page, $white_bordered_img, $dpi );
+    my $ocr_img = generate_ocr_img( 'pdf', $page, $white_bordered_img, $dpi );
 
     # Convert to an OCR'd PDF
     runcmd
