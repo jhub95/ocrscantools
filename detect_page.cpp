@@ -8,13 +8,14 @@
 #include <math.h>
 #include <string.h>
 
-//#define _DBG
 
 using namespace cv;
 using namespace std;
+typedef vector<vector<Point> > point_list;
 
 #define DOWNSIZE 10.0
 
+int debug = 0;  // XXX for better binary size you can #def this to 0
 int thresh = 50, N = 11;
 const char* wndname = "Square Detection Demo";
 
@@ -32,23 +33,21 @@ double angle( Point pt1, Point pt2, Point pt0 )
 
 // returns sequence of squares detected on the image.
 // the sequence is stored in the specified memory storage
-void findSquares( Mat& image, vector<vector<Point> >& squares )
+point_list findSquares( Mat& image )
 {
-    squares.clear();
+    point_list squares, contours;
     
     //image.resize( Size( image.cols / DOWNSIZE, image.rows / DOWNSIZE ) );
     Mat pyr, timg;
     resize( image, timg, Size(), 1.0 / DOWNSIZE, 1.0 / DOWNSIZE);
     Mat gray0(timg.size(), CV_8U), gray;
     
-    vector<vector<Point> > contours;
-    
     // find squares in every color plane of the image
-    //for( int c = 0; c < 3; c++ )
+    for( int c = 0; c < 3; c++ )
     {
-        //int ch[] = {c, 0};
-        //mixChannels(&timg, 1, &gray0, 1, ch, 1);
-        cvtColor( timg, gray0, CV_BGR2GRAY, 1 );
+        int ch[] = {c, 0};
+        mixChannels(&timg, 1, &gray0, 1, ch, 1);
+        //cvtColor( timg, gray0, CV_BGR2GRAY, 1 );
         
         // try several threshold levels
         //for( int l = 1; l < N; l++ )
@@ -77,69 +76,70 @@ void findSquares( Mat& image, vector<vector<Point> >& squares )
             }
 
             // find contours and store them all as a list
-            findContours(gray, contours, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE);
-
-// Debug for showing all the potential contours it has found
-#ifdef _DBG
-            RNG rng(12345);
-            Mat tmat(timg.clone());
-            for( size_t i = 0; i < contours.size(); i++ )
-            {
-                drawContours(tmat, contours, i, Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) ), 3 );
-            }
-            imshow( "blah", tmat );
-            waitKey(0);
-#endif
-
-            vector<Point> approx;
-
-            // test each contour
-            for( size_t i = 0; i < contours.size(); i++ )
-            {
-                // approximate contour with accuracy proportional
-                // to the contour perimeter
-                approxPolyDP(Mat(contours[i]), approx, arcLength(Mat(contours[i]), true)*0.02, true);
-
-#ifdef _DBG
-                if( fabs(contourArea(Mat(approx))) > 1000 ) {
-                    Mat tmat(timg.clone());
-                    vector<vector<Point> > t;
-                    t.push_back( approx );
-                    drawContours(tmat, t, 0, Scalar(128, 128, 128), 3 );
-                    imshow( "blah", tmat );
-                    waitKey(0);
-                }
-#endif
-
-                // square contours should have 4 vertices after approximation
-                // relatively large area (to filter out noisy contours)
-                // and be convex.
-                // Note: absolute value of an area is used because
-                // area may be positive or negative - in accordance with the
-                // contour orientation
-                if( approx.size() == 4 &&
-                    fabs(contourArea(Mat(approx))) > 1000 &&
-                    isContourConvex(Mat(approx)) )
-                {
-                    double maxCosine = 0;
-
-                    for( int j = 2; j < 5; j++ )
-                    {
-                        // find the maximum cosine of the angle between joint edges
-                        double cosine = fabs(angle(approx[j%4], approx[j-2], approx[j-1]));
-                        maxCosine = MAX(maxCosine, cosine);
-                    }
-
-                    // if cosines of all angles are small
-                    // (all angles are ~90 degree) then write quandrange
-                    // vertices to resultant sequence
-                    if( maxCosine < 0.1 )
-                        squares.push_back(approx);
-                }
-            }
-
+            point_list cont;
+            findContours(gray, cont, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE);
+            contours.insert(contours.end(), cont.begin(), cont.end());
         }
     }
+
+    // Debug for showing all the potential contours it has found
+    if( debug ) {
+        RNG rng(12345);
+        Mat tmat(timg.clone());
+        for( size_t i = 0; i < contours.size(); i++ )
+        {
+            drawContours(tmat, contours, i, Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) ), 3 );
+        }
+        imshow( "blah", tmat );
+        waitKey(0);
+    }
+
+    vector<Point> approx;
+
+    // test each contour
+    for( size_t i = 0; i < contours.size(); i++ )
+    {
+        // approximate contour with accuracy proportional
+        // to the contour perimeter
+        approxPolyDP(Mat(contours[i]), approx, arcLength(Mat(contours[i]), true)*0.02, true);
+
+        if( debug && fabs(contourArea(Mat(approx))) > 1000 ) {
+            Mat tmat(timg.clone());
+            point_list t;
+            t.push_back( approx );
+            drawContours(tmat, t, 0, Scalar(128, 128, 128), 3 );
+            imshow( "blah", tmat );
+            waitKey(0);
+        }
+
+        // square contours should have 4 vertices after approximation
+        // relatively large area (to filter out noisy contours)
+        // and be convex.
+        // Note: absolute value of an area is used because
+        // area may be positive or negative - in accordance with the
+        // contour orientation
+        if( approx.size() == 4 &&
+            fabs(contourArea(Mat(approx))) > 1000 &&
+            isContourConvex(Mat(approx)) )
+        {
+            double maxCosine = 0;
+
+            for( int j = 2; j < 5; j++ )
+            {
+                // find the maximum cosine of the angle between joint edges
+                double cosine = fabs(angle(approx[j%4], approx[j-2], approx[j-1]));
+                maxCosine = MAX(maxCosine, cosine);
+            }
+
+            // if cosines of all angles are small
+            // (all angles are ~90 degree) then write quandrange
+            // vertices to resultant sequence
+            if( maxCosine < 0.1 )
+                squares.push_back(approx);
+        }
+    }
+
+    return squares;
 }
 
 void get_corners( vector<Point> square, Point &top, Point &bottom ) {
@@ -173,7 +173,8 @@ bool sortcmp( Point i, Point j ) {
 int main(int argc, char** argv)
 {
     namedWindow( wndname, 1 );
-    vector<vector<Point> > squares;
+    if( argc > 2 )
+        debug = atoi( argv[2]);
 
     // image.jpg
     
@@ -184,20 +185,20 @@ int main(int argc, char** argv)
         return 1;
     }
     
-    findSquares(image, squares);
+    point_list squares = findSquares(image);
 
-// Debug for showing all the squares
-#ifdef _DBG
-    RNG rng(12345);
-    Mat timg;
-    resize( image, timg, Size(), 1.0 / DOWNSIZE, 1.0 / DOWNSIZE);
-    for( size_t i = 0; i < squares.size(); i++ )
-    {
-        drawContours(timg, squares, i, Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) ), 3 );
+    // Debug for showing all the squares
+    if( debug ) {
+        RNG rng(12345);
+        Mat timg;
+        resize( image, timg, Size(), 1.0 / DOWNSIZE, 1.0 / DOWNSIZE);
+        for( size_t i = 0; i < squares.size(); i++ )
+        {
+            drawContours(timg, squares, i, Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) ), 3 );
+        }
+        imshow( "blah", timg );
+        waitKey(0);
     }
-    imshow( "blah", timg );
-    waitKey(0);
-#endif
 
     // none found
     if( !squares.size() )

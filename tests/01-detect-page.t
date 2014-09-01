@@ -2,12 +2,13 @@ use strict;
 use warnings;
 use FindBin::libs qw(use export);
 use BookScan;
-use Test::More 'no_plan';
+use Test::More tests => 11;
 use Test::Differences;
 
 my $BASE = "$lib[0]/../tests";
 my $TEST_DIR = "$BASE/detect_page";
 my $b = BookScan->new(
+#    AUTOCROP_DEBUG => 1
 );
 
 sub test_crop_detect {
@@ -17,6 +18,8 @@ sub test_crop_detect {
     eq_or_diff [$b->auto_crop_detect( "$TEST_DIR/$f", @$params )], $exp,
         "$f should have crop detection correct";
 }
+
+test_crop_detect( [ 'fullscreen_color_nocrop_02.jpg' ], [ ]);
 
 test_crop_detect( [ 'normal_nocrop_01.jpg' ], [
             '10 1050',
@@ -29,7 +32,7 @@ test_crop_detect( ['normal_nocrop_02.jpg']
         => [
             '10 1190',
             '10 3690',
-            '1650 3690',
+            '1660 3690',
             '1680 1210'
         ]);
 
@@ -38,16 +41,23 @@ test_crop_detect( ['fullscreen_nocrop_01.jpg']
             '10 10',
             '10 4590',
             '3200 4590',
-            '3240 10'
+            '3250 20'
         ]);
 
 test_crop_detect( [ 'fullscreen_nocrop_02.jpg' ]
         => [
             '10 10',
-            '50 4500',
+            '10 4450',
             '3210 4540',
             '3290 10'
 
+        ]);
+
+test_crop_detect( [ 'fullscreen_color_nocrop_01.jpg' ], [
+            '10 10',
+            '10 4590',
+            '3140 4590',
+            '3240 30',
         ]);
 
 test_crop_detect([ 'normal_crop_01.jpg','94.5%x100%+0+0', 'even' ]
@@ -81,3 +91,12 @@ test_crop_detect( ['fullscreen_crop_02.jpg','94.5%x100%+0+0', 'even']
             '3180 4570',
             '3250 10'
         ]);
+
+test_crop_detect( ['fullscreen_color_crop_01.jpg','94.5%x100%+0+0', 'even']
+        => [
+            '3250 160',
+            '30 160',
+            '40 4590',
+            '3180 4590'
+        ]);
+

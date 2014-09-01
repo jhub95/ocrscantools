@@ -1,0 +1,10 @@
+        # Now mask out anything that doesnt look like text to give nice white background
+        #push @cmd,
+        #    '(',
+        #        qw< +clone -contrast-stretch 0.5%x60% -morphology erode:3 disk -threshold 80% -blur 0x5 -threshold 80% -negate -write mpr:mask >,
+        #    ')',
+        #    #-lat => '30x30,-1%',       # adaptive thresholding here if needed
+        #    qw< -mask mpr:mask -threshold -1 +mask -delete 1 >
+        #    ;
+
+
