@@ -69,23 +69,40 @@ point_list findSquares( Mat& image )
                 //     tgray(x,y) = gray(x,y) < (l+1)*255/N ? 255 : 0
                 //adaptiveThreshold( gray0, gray, 255.0, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY, 7, 40 );
 
-                // Produces 1-bit output image
-                gray = gray0 > 180;
+                GaussianBlur( gray0, gray0, Size(7,7), 0 );
+                gray = gray0 > 150;
+                //double high_thres = cv::threshold( gray0, gray, 0, 255, CV_THRESH_BINARY+CV_THRESH_OTSU );
+                //cerr << "HIGH: "<< high_thres << "\n";
+                //Canny(gray0, gray, 0, 250, 3);
+                //dilate(gray, gray, Mat(), Point(-1,-1));
+                //dilate(gray, gray, Mat(), Point(-1,-1));
+                //dilate(gray, gray, Mat(), Point(-1,-1));
 
-                /*
-                imshow( "blah", gray );
-                waitKey(0);
-                */
             }
 
             // find contours and store them all as a list
+            Mat tmat;
+            if( debug )
+                cvtColor( gray, tmat, CV_GRAY2BGR );
+
             point_list cont;
             findContours(gray, cont, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE);
             contours.insert(contours.end(), cont.begin(), cont.end());
+
+            if( debug > 1 ) {
+                RNG rng(12345);
+                for( size_t i = 0; i < cont.size(); i++ )
+                {
+                    drawContours(tmat, cont, i, Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) ), 3 );
+                }
+                imshow( "blah", tmat );
+                waitKey(0);
+            }
         }
     }
 
     // Debug for showing all the potential contours it has found
+    /*
     if( debug ) {
         RNG rng(12345);
         Mat tmat(timg.clone());
@@ -96,17 +113,21 @@ point_list findSquares( Mat& image )
         imshow( "blah", tmat );
         waitKey(0);
     }
+    */
 
     vector<Point> approx;
 
     // test each contour
     for( size_t i = 0; i < contours.size(); i++ )
     {
+        if( contourArea(Mat(contours[i])) < 1000 )
+            continue;
+
         // approximate contour with accuracy proportional
         // to the contour perimeter
         approxPolyDP(Mat(contours[i]), approx, arcLength(Mat(contours[i]), true)*0.02, true);
 
-        if( debug && fabs(contourArea(Mat(approx))) > 1000 ) {
+        if( debug > 1 && fabs(contourArea(Mat(approx))) > 1000 ) {
             Mat tmat(timg.clone());
             point_list t;
             t.push_back( approx );
@@ -191,7 +212,7 @@ int main(int argc, char** argv)
     point_list squares = findSquares(image);
 
     // Debug for showing all the squares
-    if( debug ) {
+    if( debug > 1 ) {
         RNG rng(12345);
         Mat timg;
         resize( image, timg, Size(), 1.0 / DOWNSIZE, 1.0 / DOWNSIZE);
@@ -210,6 +231,7 @@ int main(int argc, char** argv)
     // Now find biggest square (area)
     vector<Point> biggest = squares[0];
     Size biggest_wh = square_dim( biggest );
+    size_t biggest_n = 0;
 
     for( size_t i = 1; i < squares.size(); i++ )
     {
@@ -217,8 +239,16 @@ int main(int argc, char** argv)
 
         if( wh.width * wh.height > biggest_wh.width * biggest_wh.height ) {
             biggest_wh = wh;
+            biggest_n = i;
             biggest = squares[i];
         }
+    }
+    if( debug ) {
+        Mat timg;
+        resize( image, timg, Size(), 1.0 / DOWNSIZE, 1.0 / DOWNSIZE);
+        drawContours(timg, squares, biggest_n, Scalar( 255, 0, 0 ), 1 );
+        imshow( "blah", timg );
+        waitKey(0);
     }
 
     for( size_t i = 0; i < biggest.size(); i++ ) {

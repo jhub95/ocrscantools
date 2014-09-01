@@ -26,7 +26,7 @@ sub auto_crop_detect {
     }
     push @cmd, $autoimg;
     $self->runcmd( @cmd );
-    my $debug = $self->AUTOCROP_DEBUG ? 1 : 0;
+    my $debug = $self->AUTOCROP_DEBUG || 0;
     my $cmd = $self->BASE . "/detect_page";
     chomp( my @corners = `$cmd $autoimg $debug` );
     if( !@corners ) {
@@ -36,19 +36,26 @@ sub auto_crop_detect {
     return map { my ($x,$y) = split ' '; { x => 0+$x, y => 0+$y } } @corners;
 }
 
+sub _sort_points {
+    my ($self, @points) = @_;
+    return () if !@points;
+
+    @points = sort { $a->{y} <=> $b->{y} } @points;
+
+    # order of points now: top-left top-right bottom-left bottom-right
+    return (
+        sort( { $a->{x} <=> $b->{x} } @points[0,1] ),
+        sort( { $a->{x} <=> $b->{x} } @points[2,3] ),
+    );
+}
+
 sub get_crop_and_distort {
     my ($self, $corners) = @_;
 
     # Now have 4 points of the corners. Figure out the big rectangle
     # surrounding them, crop, and then move the points to fill the whole
     # square image
-    my @points = sort { $a->{y} <=> $b->{y} } @$corners;
-
-    # order of points now: top-left top-right bottom-left bottom-right
-    @points = (
-        sort( { $a->{x} <=> $b->{x} } @points[0,1] ),
-        sort( { $a->{x} <=> $b->{x} } @points[2,3] ),
-    );
+    my @points = $self->_sort_points( @$corners );
 
     #for(my $i = 0; $i < @points; $i++) {
     #    printf "%d,%d\n", @{$points[$i]}{qw<x y>}
