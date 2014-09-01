@@ -114,12 +114,28 @@ sub runcmd {
 }
 
 sub _tmpfile {
-    my ($self, $name, $ext) = @_;
+    my ($self, $name, $ext, %extra) = @_;
     return File::Temp->new(
-        TEMPLATE => $name . 'XXXXXXXX',
+        TEMPLATE => $name . '-XXXXXXXX',
         UNLINK => 1,
         SUFFIX => $ext,
+        %extra
     );
+}
+
+# XXX change this to just a generic tmpfile when we dont run with debug
+sub _tmp_page_file { shift->output_page_file( 'tmp-' . shift, @_ ); }
+sub _tmp_output_file { shift->output_file( 'tmp-' . shift, @_ ); }
+
+sub output_page_file {
+    my ($self, $type, $page, $ext) = @_;
+    $ext = '.png' if !defined $ext;
+    $self->output_file( $type, "$page->{fullnum}$ext" );
+}
+sub output_file {
+    my ($self, $type, $name) = @_;
+    mkdir $type if !-d $type;
+    return "$type/$name";
 }
 
 1

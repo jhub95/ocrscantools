@@ -23,10 +23,6 @@ my $conf = 'BookConf';
 my $path = $conf->opt( 'path' ) || 'raw';
 my $DUMP_FILE = 'pages.dump';
 
-for( qw< output page_output > ) {
-    mkdir $_ if !-d;
-}
-
 # Process:
 # * Detect crops/distortion info
 # * Work out general page size from this
@@ -63,8 +59,6 @@ for my $page ( @pages ) {
     print "---- page $page->{num} ----\n", $page->{text}, "\n";
 }
 
-sub runcmd { $s->runcmd( @_ ) }
-
 sub get_crop_args {
     my ($page) = @_;
     my $page_type = $page->{page_type};
@@ -83,25 +77,12 @@ sub get_crop_args {
     }
 }
 
-sub process_page_pdf {
+sub runcmd { $s->runcmd( @_ ) }
+
+sub generate_cropped_masked_img {
     my ($page) = @_;
-
-    my ($tmpimg, $outimg);
-    my $OUT_EXT = "png";
-    if( $DEBUG ) {
-        $outimg = sprintf "page_output/%03d.%s", $page->{num}, $OUT_EXT;
-    } else {
-        # keep in scope so doesnt get deleted
-        $tmpimg = tmpfile(
-            SUFFIX => "." . $OUT_EXT
-        );
-        $outimg = $tmpimg->filename
-    }
-
-    my $outpdf = sprintf "page_output/%03d", $page->{num};
-
-    my $out_bg_img = sprintf "page_output/%03d_bg.jpg", $page->{num};
-    if( !-f $outimg ) {
+    my $cropped_masked_img = $s->_tmp_page_file( 'cropped_masked', $page );
+    if( !-f $cropped_masked_img ) {
         my @cmd = (
             'convert',
                 $page->{file},
@@ -127,25 +108,31 @@ sub process_page_pdf {
                 '-compose' => 'Divide_Src', '-composite';
         }
 
-        my $tmpimg = tmpfile( SUFFIX => ".png" );
-        runcmd @cmd => $tmpimg;
+        runcmd( @cmd => $cropped_masked_img );
+    }
 
-        my ($w,$h,$offx,$offy) = find_image_extent( $tmpimg );
+    return $cropped_masked_img;
+}
 
-        # XXX defines the page size in final output
-        my $dpi = 300;
+sub generate_white_bordered_img {
+    my ($page, $cropped_masked_img, $out_pdf, $dpi) = @_;
+    my $white_bordered_img = $s->_tmp_page_file( 'white_bordered', $page );
+    if( !-f $white_bordered_img ) {
+        my ($w,$h,$offx,$offy) = find_image_extent( $cropped_masked_img );
 
         if( $w < 5 || $h < 5 ) {
-            # image was blank
+            # image was totally blank, just output a blank PDF
             runcmd 'convert',
-                qw< ( -page >, $pdf_page_size, qw< xc:white ) >,   # Create single white pixel on PDF page (actually can do without this but probably not with convert tool)
+                # Create single white pixel on PDF page (actually can do without this but probably not with convert tool)
+                qw< ( -page >, $pdf_page_size, qw< xc:white ) >,
+
                 '+repage',
 
-                # ppi here is needed for work with leptonica ie tesseract
+                # dpi here is needed to get page sizing working in acrobat
                 qw< -units PixelsPerInch >,
                 '-density' => $dpi,
 
-                $outpdf . ".pdf";
+                $out_pdf;
 
             return;
         }
@@ -163,9 +150,9 @@ sub process_page_pdf {
         runcmd 'convert',
             qw< ( -size >, $pdf_page_size, qw< xc:white ) >,   # Create white layer. XXX do this transparent?
 
-            # Crop main content to boundaries
+            # Crop main content to white boundaries
             qw< ( >,
-                $tmpimg,
+                $cropped_masked_img,
 
                 qw< -crop >, "${w}x${h}+$offx+$offy!",
 
@@ -181,73 +168,121 @@ sub process_page_pdf {
 
             '+repage',
 
-            # ppi here is needed for work with leptonica ie tesseract
-            #qw< -units PixelsPerInch >,
-            #'-density' => $dpi,
+            $white_bordered_img;
+    }
+    return $white_bordered_img;
+}
 
-            $outimg;
-
+sub generate_pdf_bg_img {
+    my ($page, $white_bordered_img, $dpi) = @_;
+    my $pdf_bg_img = $s->_tmp_page_file( 'pdf_bg', $page, '.jpg' );
+    if( !-f $pdf_bg_img ) {
         # Set pic to grayscale (1/3, 1/3, 1/3) and subtract it from the
         # original, then cut out some fuzz. If there are non-grayscale colors
         # over larger areas there will be a maxima here which we can pick up
         # on.
-        my @perhaps_grayscale;
-        my $max_color_diff = `convert $outimg -scale 25% \\( +clone -modulate 100,0 \\) -compose Difference -composite -level 10% -format '%[fx:maxima]' info:`;
-        if( $max_color_diff < 0.05 ) {
-            @perhaps_grayscale = qw< -colorspace gray >;
-        }
+        my $is_grayscale = is_grayscale( $white_bordered_img );
 
         # Now output the image that's going to be visible to the user - loose
         # some resolution but keep the dimensions the same
-        my $out_ppi = 140;   # Actually choose whatever
-        my $scale = sprintf "%0.2f%%", $out_ppi / $dpi * 100;
-        runcmd 'convert', $outimg,
-            qw< -quality 80 -units PixelsPerInch -background white -density > => $out_ppi,
+
+        # ratio of out_dpi:dpi defines how much we scale the image in the PDF.
+        # So for example if dpi is 300 and out_dpi is 150 then we would scale
+        # PDF to 50% of original size
+        my $out_dpi = 140;   
+        my $scale = sprintf "%0.2f%%", $out_dpi / $dpi * 100;
+
+        runcmd 'convert', $white_bordered_img,
+
+            # XXX need to look to see if we can reduce/increase the quality...
+            -quality => $is_grayscale ? 40 : 50,
+
+            qw< -background white >,
+
+            # Some minor enhancements to filter out noise on the PDF image
             '-level' => $conf->opt('output-level') || $conf->opt('level') || '50%,98%',
-            @perhaps_grayscale,
-            '-scale' => $scale,
-            $out_bg_img;
 
-        # XXX modify outimg by eg bumping up size/dpi or applying level to it in order to get it working better with tesseract?
-        my $outimg2 = sprintf "page_output/%03d_tmp.%s", $page->{num}, $OUT_EXT;
-        # XXX or tmpimg
+            ( $is_grayscale ? qw< -colorspace gray > : () ),
 
-        runcmd 'convert', $outimg,
+            -scale => $scale,
+
+            # leptonica ie tesseract needs these settings to detect DPI properly
+            qw< -units PixelsPerInch >, -density => $out_dpi,
+
+            $pdf_bg_img;
+    }
+    return $pdf_bg_img;
+}
+
+sub generate_ocr_img {
+    my ($page, $white_bordered_img, $dpi) = @_;
+    my $ocr_img = $s->_tmp_page_file( 'ocr_img', $page );
+    if( !-f $ocr_img ) {
+        my $tmpimg = $s->_tmpfile( 'ocr_cleanup', '.png' );
+        runcmd 'convert', $white_bordered_img,
+
+            # Stretch black and white in the image - this needs to be detected
+            # on each book/page to figure out what is best for tessearct but
+            # makes a very good improvement
             '-level' => $conf->opt('level') || '50%,98%',
-            $outimg2;
+
+            $tmpimg;
 
         # XXX check that this algorithm actually improves quality over a wide range of sources
         #runcmd 'python', $FindBin::Bin . '/extract_text.py', $tmpimg, $tmpimg;
-        #runcmd $FindBin::Bin . '/../DetectText/DetectText', $outimg2, $outimg2, 1;
+        #runcmd $FindBin::Bin . '/../DetectText/DetectText', $tmpimg, $tmpimg, 1;
 
         # XXX See what qw< -filter triangle -resize 300% > does - reported to work well (http://stb-tester.com/blog/2014/04/14/improving-ocr-accuracy.html)
         runcmd 'convert',
-            $outimg2,
+            $tmpimg,
 
-            #convert page_output/004.png \( output/004_tmp.png -modulate 80% -blur 3 \) -compose Soft_Light -composite t.jpg also a possibility
+            #convert page_output/004.png \( SWT_output.png -modulate 80% -blur 3 \) -compose Soft_Light -composite t.jpg also a possibility
 
             #'(', $outimg, qw< -colorspace gray ) >,
             #'(', $outimg2, qw< -morphology erode disk:3 -negate ) -compose Divide_Src -composite >,
             #qw< -level 50%,90% -morphology erode rectangle:6x1 >,
 
-            # ppi here is needed for work with leptonica ie tesseract
-            qw< -units PixelsPerInch >,
-
             #qw< -filter triangle -resize 300% >,
-            '-density' => $dpi,# * 3,
+
+            # leptonica ie tesseract needs these settings to detect DPI properly
+            qw< -units PixelsPerInch >, -density => $dpi,# * 3,
+
             #'+repage',
-            $outimg;
+            $ocr_img;
     }
+    return $ocr_img
+}
+
+sub process_page_pdf {
+    my ($page) = @_;
+
+    my $out_pdf_noext = $s->output_page_file( 'pdf', $page, '' );
+    my $out_pdf = "$out_pdf_noext.pdf";
+    return if -f $out_pdf;
+
+    # This just defines the page size in final output
+    my $dpi = 300;
+
+    my $cropped_masked_img = generate_cropped_masked_img( $page );
+    my $white_bordered_img = generate_white_bordered_img( $page, $cropped_masked_img, $out_pdf, $dpi );
+    return if !$white_bordered_img && -f $out_pdf;  # May shortcut if whole image is white
+
+    my $pdf_bg_img = generate_pdf_bg_img( $page, $white_bordered_img, $dpi );
+    my $ocr_img = generate_ocr_img( $page, $white_bordered_img, $dpi );
 
     # Convert to an OCR'd PDF
     runcmd
         'tesseract',
-        '-c' => 'pdf_background_image=' . $out_bg_img,
-        '-l' => 'mark',
-        $outimg => $outpdf,
-        'mark_pdf';
 
-    #print Dumper $page;
+        # Use our provided image
+        -c => 'pdf_background_image=' . $pdf_bg_img,
+
+        # Language spec
+        -l => 'mark',
+
+        $ocr_img => $out_pdf_noext,
+
+        'mark_pdf';
 }
 
 # Run specified number of processes as subthread using queue. Returns when all
@@ -292,15 +327,6 @@ sub run_array {
         push @ret, $item;
     }
     return @ret;
-}
-
-sub tmpfile {
-    my %ARGS = @_;
-    return File::Temp->new(
-        TEMPLATE =>'tmpXXXXXXXX',
-        UNLINK => 1,
-        %ARGS
-    );
 }
 
 sub process_page_txt {
@@ -379,11 +405,12 @@ sub load_pages {
 
     my @pages;
     for( glob "$path/*.jpg") {
-        next unless m!(?: /|^ ) 0*(\d+)\.jpg$!xi;
+        next unless m!(?: /|^ ) (0*(\d+))\.jpg$!xi;
         push @pages, {
-            num => $1,
+            num => $2,
+            fullnum => $1,
             file => $_,
-            page_type => $1 % 2 ? 'odd' : 'even'
+            page_type => $2 % 2 ? 'odd' : 'even'
         };
     }
 
@@ -435,7 +462,6 @@ sub generate_masks {
     run_multi( sub {
         my ($page) = @_;
 
-        # XXX unlink at end if dev run
         runcmd( 'convert',
             $page->{file},
             '-auto-orient',
@@ -448,9 +474,9 @@ sub generate_masks {
         my ($q) = @_;
         for my $type ('odd', 'even') {
             my $name = $conf->opt( $type . '_blank_page' ) or next;
-            my $page = first { $_->{file} eq "$path/$name" } @$pages;
+            my $page = first { $_->{file} eq "$path/$name" } @$pages;   # XXX ugh use hash
 
-            my $output = "output/" . $page->{page_type} . '_blank_mask.png';
+            my $output = $s->_tmp_output_file( 'mask', $page->{page_type} . '_blank_mask.png' );
             #print Dumper $page;
             $masks{$type} = $output;
             next if -f $output;
@@ -492,3 +518,19 @@ sub find_image_extent {
     #warn "$out\n";
     return split / /, $out;
 }
+
+# Return true if image is grayscale, false if colour.
+sub is_grayscale {
+    my ($img) = @_;
+
+    # Clone image to grayscale, subtract from initial image and then check to see if there is anything other than black left over.
+    my $max_color_diff = `convert $img -scale 25% \\( +clone -modulate 100,0 \\) -compose Difference -composite -level 10% -format '%[fx:maxima]' info:`;
+
+    return $max_color_diff < 0.05;
+}
+
+sub tmpfile {
+    my %ARGS = @_;
+    $s->_tmpfile( 'tmp', delete($ARGS{SUFFIX}) || '', %ARGS);
+}
+
