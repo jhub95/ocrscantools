@@ -8,6 +8,8 @@
 #include <math.h>
 #include <string.h>
 
+//#define _DBG
+
 using namespace cv;
 using namespace std;
 
@@ -57,7 +59,7 @@ void findSquares( Mat& image, vector<vector<Point> >& squares )
             /*{
                 // apply Canny. Take the upper threshold from slider
                 // and set the lower to 0 (which forces edges merging)
-                Canny(gray0, gray, 0, 100, 5);
+                Canny(gray0, gray, 0, 100);
                 // dilate canny output to remove potential
                 // holes between edge segments
                 dilate(gray, gray, Mat(), Point(-1,-1));
@@ -66,31 +68,49 @@ void findSquares( Mat& image, vector<vector<Point> >& squares )
             {
                 // apply threshold if l!=0:
                 //     tgray(x,y) = gray(x,y) < (l+1)*255/N ? 255 : 0
-                gray = gray0 > 200;
+                //adaptiveThreshold( gray0, gray, 255.0, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY, 7, 40 );
+                gray = gray0 > 180;
+                /*
+                imshow( "blah", gray );
+                waitKey(0);
+                */
             }
 
             // find contours and store them all as a list
             findContours(gray, contours, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE);
 
-#if 0
+// Debug for showing all the potential contours it has found
+#ifdef _DBG
             RNG rng(12345);
+            Mat tmat(timg.clone());
             for( size_t i = 0; i < contours.size(); i++ )
             {
-                drawContours(timg, contours, i, Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) ), 3 );
-                imshow( "blah", timg );
+                drawContours(tmat, contours, i, Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) ), 3 );
             }
-                waitKey(0);
+            imshow( "blah", tmat );
+            waitKey(0);
 #endif
 
             vector<Point> approx;
-            
+
             // test each contour
             for( size_t i = 0; i < contours.size(); i++ )
             {
                 // approximate contour with accuracy proportional
                 // to the contour perimeter
                 approxPolyDP(Mat(contours[i]), approx, arcLength(Mat(contours[i]), true)*0.02, true);
-                
+
+#ifdef _DBG
+                if( fabs(contourArea(Mat(approx))) > 1000 ) {
+                    Mat tmat(timg.clone());
+                    vector<vector<Point> > t;
+                    t.push_back( approx );
+                    drawContours(tmat, t, 0, Scalar(128, 128, 128), 3 );
+                    imshow( "blah", tmat );
+                    waitKey(0);
+                }
+#endif
+
                 // square contours should have 4 vertices after approximation
                 // relatively large area (to filter out noisy contours)
                 // and be convex.
@@ -113,10 +133,11 @@ void findSquares( Mat& image, vector<vector<Point> >& squares )
                     // if cosines of all angles are small
                     // (all angles are ~90 degree) then write quandrange
                     // vertices to resultant sequence
-                    if( maxCosine < 0.04 )
+                    if( maxCosine < 0.1 )
                         squares.push_back(approx);
                 }
             }
+
         }
     }
 }
@@ -164,6 +185,19 @@ int main(int argc, char** argv)
     }
     
     findSquares(image, squares);
+
+// Debug for showing all the squares
+#ifdef _DBG
+    RNG rng(12345);
+    Mat timg;
+    resize( image, timg, Size(), 1.0 / DOWNSIZE, 1.0 / DOWNSIZE);
+    for( size_t i = 0; i < squares.size(); i++ )
+    {
+        drawContours(timg, squares, i, Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) ), 3 );
+    }
+    imshow( "blah", timg );
+    waitKey(0);
+#endif
 
     // none found
     if( !squares.size() )
