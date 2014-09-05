@@ -1,1 +1,9 @@
 See ~/data/documents/Work Abroad/Turkey/Books/unique_words/ for details of generating the 'mark' language etc
+
+To diff two files
+wdiff --no-common pdfout/009.txt text/009.txt
+perhaps -s option
+
+
+pdftotext -layout '/home/mark/documents/Work Abroad/Turkey/Books/Jerry_Mattix/Hey_Gavur/old/Hey Gavur, Anlatsana, 7. baski -son.pdf' - | perl splitter.pl
+
