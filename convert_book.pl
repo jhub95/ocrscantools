@@ -66,14 +66,15 @@ sub get_crop_args {
     if( my $crop = $conf->opt( $page_type . '_page_crop' ) ) {
         warn "Manual crop specified";
         $page->{im_crop_args} = [ -crop => $crop ];
-        $page->{crop_details} = [ $crop =~ /^(\d+)x(\d+) (?: \+(\d+)\+(\d+) )?/x ];
+        $page->{dimensions} = [ $crop =~ /^(\d+)x(\d+)/x ];
     } else {
-        my @corners = $s->auto_crop_detect( $page->{file}, $conf->opt( $page_type . "_detect_crop" ), $page_type )
+        my $initial_crop = $conf->opt( $page_type . "_detect_crop" );
+        my @corners = $s->auto_crop_detect( $page->{file}, $initial_crop, $page_type )
             or return;
 
         %$page = (
             %$page,
-            $s->get_crop_and_distort( \@corners )
+            $s->get_crop_and_distort( $page_type, $initial_crop, \@corners )
         )
     }
 }
@@ -97,7 +98,7 @@ sub generate_cropped_masked_img {
 
         # Use a merge to try to get rid of background if necessary
         if( my $maskf = $masks->{$page->{page_type}} ) {
-            my ($w, $h) = @{$page->{crop_details}} or die;
+            my ($w, $h) = @{$page->{dimensions}} or die;
             push @cmd,
                 $maskf,
 
@@ -401,6 +402,7 @@ sub load_pages {
             page_type => $2 % 2 ? 'odd' : 'even'
         };
     }
+    #@pages = grep { $_->{num} < 10 || $_->{num} == 209 } @pages;
 
     # autodetect crops for each page and find the largest width and height
     @pages = run_array( sub {
@@ -420,9 +422,9 @@ sub find_biggest_page_size {
 
     my @biggest_crop = (0,0);
     for my $page (@$pages) {
-        next if !$page->{crop_details};
+        next if !$page->{dimensions};
         for( 0,1 ) {
-            $biggest_crop[$_] = $page->{crop_details}[$_] if $page->{crop_details}[$_] > $biggest_crop[$_];
+            $biggest_crop[$_] = $page->{dimensions}[$_] if $page->{dimensions}[$_] > $biggest_crop[$_];
         }
     }
 
@@ -433,7 +435,7 @@ sub check_pages {
     my ($pages) = @_;
     my @ok_pages;
     for my $page ( @$pages ) {
-        if( !$page->{crop_details} ) {
+        if( !$page->{dimensions} ) {
             warn "Page $page->{num} couldn't detect page size - won't be processed\n"
         } else {
             push @ok_pages, $page;

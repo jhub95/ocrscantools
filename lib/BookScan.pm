@@ -19,7 +19,6 @@ sub auto_crop_detect {
     );
     if( $crop ) {
         if( $page_type eq 'odd' ) {
-            # XXX need to adjust output params
             push @cmd, qw< -gravity NorthEast >
         }
         push @cmd, -crop => $crop;
@@ -50,7 +49,7 @@ sub _sort_points {
 }
 
 sub get_crop_and_distort {
-    my ($self, $corners) = @_;
+    my ($self, $page_type, $initial_crop, $corners) = @_;
 
     # Now have 4 points of the corners. Figure out the big rectangle
     # surrounding them, crop, and then move the points to fill the whole
@@ -92,12 +91,25 @@ sub get_crop_and_distort {
             @{$real_points[$i]}{qw< x y >};
     }
 
+    my @im_args = (
+        -crop => sprintf("%dx%d+%d+%d", $wh{x}, $wh{y}, $min{x}, $min{y} ),
+        '-distort' => 'BilinearReverse' => $distort
+    );
+
+    if( $initial_crop ) {
+        # first crop each page as used in page_detect and then apply the proper
+        # crop on them - easier than trying to second-guess what the first crop
+        # did
+        unshift @im_args, (
+            -gravity => $page_type eq 'even' ? 'NorthWest' : 'NorthEast',
+            -crop => $initial_crop,
+            -gravity => 'NorthWest',
+        )
+    }
+
     return (
-        im_crop_args => [
-            -crop => sprintf("%dx%d+%d+%d", $wh{x}, $wh{y}, $min{x}, $min{y} ),
-            '-distort' => 'BilinearReverse' => $distort
-        ],
-        crop_details => [ $wh{x}, $wh{y}, $min{x}, $min{y} ],
+        im_crop_args => \@im_args,
+        dimensions => [ $wh{x}, $wh{y} ],
     );
 }
 
