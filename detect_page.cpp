@@ -125,7 +125,7 @@ point_list findSquares( Mat& image )
 
         // approximate contour with accuracy proportional
         // to the contour perimeter
-        approxPolyDP(Mat(contours[i]), approx, arcLength(Mat(contours[i]), true)*0.02, true);
+        approxPolyDP(Mat(contours[i]), approx, arcLength(Mat(contours[i]), true)*0.03, true);
 
         if( debug > 1 && fabs(contourArea(Mat(approx))) > 1000 ) {
             Mat tmat(timg.clone());

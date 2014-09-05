@@ -2,13 +2,14 @@ use strict;
 use warnings;
 use FindBin::libs qw(use export);
 use BookScan;
-use Test::More tests => 93;
+use Test::More tests => 110;
 use Test::Differences;
 
 my $BASE = "$lib[0]/../tests";
 my $TEST_DIR = "$BASE/detect_page";
 my $s = BookScan->new(
-    #AUTOCROP_DEBUG => 1 #2
+    #AUTOCROP_DEBUG => 1,
+    #AUTOCROP_DEBUG => 2
 );
 
 sub test_crop_detect {
@@ -18,11 +19,14 @@ sub test_crop_detect {
     my @ret = $s->_sort_points( $s->auto_crop_detect( "$TEST_DIR/$f", @$params ) );
 
     ok @ret == @exp, "$f: Number of points should be equal";
-
-    for( my $i = 0; $i < @ret; $i++ ) {
-        for(qw< x y >) {
-            ok( ( $exp[$i]{$_} - 25 < $ret[$i]{$_} && $exp[$i]{$_} + 25 > $ret[$i]{$_} ),
-                "$f: point $i $_ should be roughly the same (exp: $exp[$i]{$_}; ret: $ret[$i]{$_})" );
+    if( @ret != @exp ) {
+        eq_or_diff \@exp, \@ret, 'points';
+    } else {
+        for( my $i = 0; $i < @ret; $i++ ) {
+            for(qw< x y >) {
+                ok( ( $exp[$i]{$_} - 25 < $ret[$i]{$_} && $exp[$i]{$_} + 25 > $ret[$i]{$_} ),
+                    "$f: point $i $_ should be roughly the same (exp: $exp[$i]{$_}; ret: $ret[$i]{$_})" );
+            }
         }
     }
 }
@@ -30,8 +34,19 @@ sub test_crop_detect {
 # Ones that have issues but can't find an easy fix:
 test_crop_detect( [ 'color_crop_02.jpg', '94.5%x100%+0+0', 'even' ], [ ]);
 test_crop_detect( [ 'color_crop_01.jpg', '94.5%x100%+0+0', 'even' ], [ ]);
-test_crop_detect( [ 'fullscreen_color_nocrop_02.jpg' ], [ ]);
 
+test_crop_detect( [ 'fullscreen_color_nocrop_02.jpg' ], [
+    '60 10',
+    '3210 10',
+    '80 4240',
+    '3040 4490'
+]);
+test_crop_detect( [ 'fullscreen_nocrop_03.jpg' ], [
+    '10 10',
+    '3130 10',
+    '10 4460',
+    '3060 4460'
+]);
 test_crop_detect( [ 'normal_nocrop_01.jpg' ], [
             '10 1050',
             '10 3770',
