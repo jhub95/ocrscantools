@@ -10,6 +10,16 @@ my $path = $lib[0];
 has [qw< DEBUG AUTOCROP_DEBUG >] => ( is => 'rw' );
 has BASE => ( is => 'ro', default => "$path/.." );
 
+sub _generate_crop {
+    my ($self, $crop, $page_type) = @_;
+    return (
+        -gravity => $page_type eq 'even' ? 'NorthWest' : 'NorthEast',
+        -crop => $crop,
+        -gravity => 'NorthWest',
+        '+repage'
+    )
+}
+
 sub auto_crop_detect {
     my ($self, $file, $crop, $page_type) = @_;
 
@@ -17,12 +27,7 @@ sub auto_crop_detect {
     my @cmd = (
         'convert', $file, '-auto-orient'
     );
-    if( $crop ) {
-        if( $page_type eq 'odd' ) {
-            push @cmd, qw< -gravity NorthEast >
-        }
-        push @cmd, -crop => $crop;
-    }
+    push @cmd, $self->_generate_crop( $crop, $page_type ) if $crop;
     push @cmd, $autoimg;
     $self->runcmd( @cmd );
     my $debug = $self->AUTOCROP_DEBUG || 0;
@@ -100,11 +105,7 @@ sub get_crop_and_distort {
         # first crop each page as used in page_detect and then apply the proper
         # crop on them - easier than trying to second-guess what the first crop
         # did
-        unshift @im_args, (
-            -gravity => $page_type eq 'even' ? 'NorthWest' : 'NorthEast',
-            -crop => $initial_crop,
-            -gravity => 'NorthWest',
-        )
+        unshift @im_args, $self->_generate_crop( $initial_crop, $page_type );
     }
 
     return (
