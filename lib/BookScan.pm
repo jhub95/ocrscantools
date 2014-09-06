@@ -1,3 +1,5 @@
+# NOTES
+# * Always +repage after a -crop
 package BookScan;
 use Mouse;
 use File::Temp ();
@@ -54,7 +56,7 @@ sub _sort_points {
 }
 
 sub get_crop_and_distort {
-    my ($self, $page_type, $initial_crop, $corners) = @_;
+    my ($self, $page_type, $initial_crop, $corners, $middle_no_crop) = @_;
 
     # Now have 4 points of the corners. Figure out the big rectangle
     # surrounding them, crop, and then move the points to fill the whole
@@ -67,8 +69,12 @@ sub get_crop_and_distort {
 
     # Shrink the crop area by a few px
     my $crop_inside = 50;
-    $points[$_]{x} += $crop_inside for 0,2;
-    $points[$_]{x} -= $crop_inside for 1,3;
+    if( !$middle_no_crop || $page_type eq 'even' ) {
+        $points[$_]{x} += $crop_inside for 0,2;
+    }
+    if( !$middle_no_crop || $page_type eq 'odd' ) {
+        $points[$_]{x} -= $crop_inside for 1,3;
+    }
 
     $points[$_]{y} += $crop_inside for 0,1;
     $points[$_]{y} -= $crop_inside for 2,3;

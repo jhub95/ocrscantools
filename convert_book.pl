@@ -64,9 +64,10 @@ sub get_crop_args {
     my $page_type = $page->{page_type};
 
     if( my $crop = $conf->opt( $page_type . '_page_crop' ) ) {
-        warn "Manual crop specified";
-        $page->{im_crop_args} = [ -crop => $crop ];
-        $page->{dimensions} = [ $crop =~ /^(\d+)x(\d+)/x ];
+        die;
+        #warn "Manual crop specified";
+        #$page->{im_crop_args} = [ -crop => $crop ];
+        #$page->{dimensions} = [ $crop =~ /^(\d+)x(\d+)/x ];
     } else {
         my $initial_crop = $conf->opt( $page_type . "_detect_crop" );
         my @corners = $s->auto_crop_detect( $page->{file}, $initial_crop, $page_type )
@@ -74,7 +75,7 @@ sub get_crop_args {
 
         %$page = (
             %$page,
-            $s->get_crop_and_distort( $page_type, $initial_crop, \@corners )
+            $s->get_crop_and_distort( $page_type, $initial_crop, \@corners, $conf->opt('middle_no_crop') )
         )
     }
 }
@@ -90,13 +91,11 @@ sub generate_cropped_masked_img {
                 $page->{file},
                 '-auto-orient',
 
-                # Figure out crop bounds so that we get the page in a picture, straighten it
+                # Figure out crop bounds so that we get the page in a picture
                 @{ $page->{im_crop_args} },
-                '-deskew' => '80%',
-                '+repage',
         );
 
-        # Use a merge to try to get rid of background if necessary
+        # Use a merge to try to get rid of background
         if( my $maskf = $masks->{$page->{page_type}} ) {
             my ($w, $h) = @{$page->{dimensions}} or die;
             push @cmd,
@@ -109,6 +108,18 @@ sub generate_cropped_masked_img {
                 '-resize' => "${w}x${h}\!",
                 '-compose' => 'Divide_Src', '-composite';
         }
+
+        # Try to remove any near-white bits that the mask didn't get rid of
+        push @cmd,
+            # Clone the image, kill any areas that are more than 10% away from white
+            qw< ( +clone -fuzz 10% -fill white +opaque white >,
+            # Blur and remove from the image
+            qw< -resize 4% -resize 2500% ) -compose Divide_Src -composite  >;
+
+        # Now try to rotate the page according to the lines to straighten it up
+        push @cmd,
+            '-deskew' => '80%',
+            '+repage';
 
         runcmd( @cmd => $cropped_masked_img );
     }
@@ -197,7 +208,7 @@ sub generate_pdf_bg_img {
         runcmd 'convert', $input_img,
 
             # XXX need to look to see if we can reduce/increase the quality...
-            -quality => $is_grayscale ? 40 : 50,
+            -quality => $is_grayscale ? 20 : 50,
 
             qw< -background white >,
 
@@ -262,6 +273,8 @@ sub generate_ocr_img {
 }
 
 sub create_text {
+    # TODO Actually this initial setup can be done on a page-by-page basis in
+    # text mode as we dont need to know the overall max page dimensions.
     my ($pages, $masks) = initial_setup();
 
     @$pages = run_array( sub {
