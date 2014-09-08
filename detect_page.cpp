@@ -115,17 +115,27 @@ point_list findSquares( Mat& image )
     }
     */
 
-    vector<Point> approx;
-
     // test each contour
     for( size_t i = 0; i < contours.size(); i++ )
     {
-        if( contourArea(Mat(contours[i])) < 1000 )
+        vector<Point> approx, approx2, c = contours[i];
+
+        if( contourArea(Mat(c)) < 1000 )
             continue;
+
+        convexHull(c, approx2);
+        if( debug > 1 && fabs(contourArea(Mat(approx2))) > 1000 ) {
+            Mat tmat(timg.clone());
+            point_list t;
+            t.push_back( approx2 );
+            drawContours(tmat, t, 0, Scalar(0, 255, 0), 3 );
+            imshow( "blah", tmat );
+            waitKey(0);
+        }
 
         // approximate contour with accuracy proportional
         // to the contour perimeter
-        approxPolyDP(Mat(contours[i]), approx, arcLength(Mat(contours[i]), true)*0.03, true);
+        approxPolyDP(approx2, approx, arcLength(Mat(c), true)*0.03, true);
 
         if( debug > 1 && fabs(contourArea(Mat(approx))) > 1000 ) {
             Mat tmat(timg.clone());
@@ -158,7 +168,7 @@ point_list findSquares( Mat& image )
             // if cosines of all angles are small
             // (all angles are ~90 degree) then write quandrange
             // vertices to resultant sequence
-            if( maxCosine < 0.1 )
+            if( maxCosine < 0.05 )
                 squares.push_back(approx);
         }
     }
