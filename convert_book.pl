@@ -23,19 +23,20 @@ my $conf = 'BookConf';
 my $INPUT_PATH = $conf->opt( 'path' ) || 'raw';
 my $DUMP_FILE = 'pages.dump';
 
-my ($cmd) = @ARGV;
-$cmd ||= 'pdf';
 my %cmd = (
     clean => \&clean,
     cleanall => sub { clean(1) },
     pdf => \&create_pdf,
     text => \&create_text,
 );
-if( $cmd{$cmd} ) {
-    $cmd{$cmd}->();
-} else {
-    warn "$0: Unknown command '$cmd' - please specify one of " . join(", ", sort keys %cmd) . "\n";
-    exit 1;
+my @cmds = @ARGV ? @ARGV : ('pdf');
+for my $cmd (@cmds) {
+    if( $cmd{$cmd} ) {
+        $cmd{$cmd}->();
+    } else {
+        warn "$0: Unknown command '$cmd' - please specify one of " . join(", ", sort keys %cmd) . "\n";
+        exit 1;
+    }
 }
 
 # Process:
@@ -273,6 +274,7 @@ sub generate_ocr_img {
 }
 
 sub create_text {
+    return if -f 'book.txt';
     # TODO Actually this initial setup can be done on a page-by-page basis in
     # text mode as we dont need to know the overall max page dimensions.
     my ($pages, $masks) = initial_setup();
@@ -308,6 +310,7 @@ sub create_text {
 }
 
 sub create_pdf {
+    return if -f 'book.pdf';
     my ($pages, $masks) = initial_setup();
     my $pdf_page_size = find_biggest_page_size( $pages );
 

@@ -7,3 +7,7 @@ perhaps -s option
 
 pdftotext -layout '/home/mark/documents/Work Abroad/Turkey/Books/Jerry_Mattix/Hey_Gavur/old/Hey Gavur, Anlatsana, 7. baski -son.pdf' - | perl splitter.pl
 
+
+pdftotext -layout /home/mark/documents/Work\ Abroad/Turkey/Books/Jerry_Mattix/Allah_Sevgidir/orig/Allah\ Sevgidir-son.pdf - | perl ../../script/splitter.pl
+cd pdfout
+for i in *; do wdiff  --no-common $i ../text/$i; done |wc -l

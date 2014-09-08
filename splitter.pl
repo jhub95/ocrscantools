@@ -8,7 +8,8 @@ binmode \*STDIN, ':utf8';
 
 local $/;
 my $inp = <>;
-$inp =~ y/ĠġĢ‟„/İŞş''/;
+$inp =~ y/ĠġĢ‟„”“/İŞş''""/;
+$inp =~ s/…/.../g;
 
 my @pages = split /\f+/, $inp;
 my $OUTDIR = 'pdfout';

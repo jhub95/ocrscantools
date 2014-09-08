@@ -35,6 +35,7 @@ sub auto_crop_detect {
     my $debug = $self->AUTOCROP_DEBUG || 0;
     my $cmd = $self->BASE . "/detect_page";
     chomp( my @corners = `$cmd $autoimg $debug` );
+    print map { "$_\n" } @corners if $self->DEBUG;
     if( !@corners ) {
         warn "Page dimensions not found for $file\n";
     }
