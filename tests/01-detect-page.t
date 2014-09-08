@@ -2,7 +2,7 @@ use strict;
 use warnings;
 use FindBin::libs qw(use export);
 use BookScan;
-use Test::More tests => 110;
+use Test::More tests => 119;
 use Test::Differences;
 
 my $BASE = "$lib[0]/../tests";
@@ -10,6 +10,7 @@ my $TEST_DIR = "$BASE/detect_page";
 my $s = BookScan->new(
     #AUTOCROP_DEBUG => 1,
     #AUTOCROP_DEBUG => 2
+    #DEBUG => 1
 );
 
 sub test_crop_detect {
@@ -34,13 +35,26 @@ sub test_crop_detect {
 # Ones that have issues but can't find an easy fix:
 test_crop_detect( [ 'color_crop_02.jpg', '94.5%x100%+0+0', 'even' ], [ ]);
 test_crop_detect( [ 'color_crop_01.jpg', '94.5%x100%+0+0', 'even' ], [ ]);
-
-test_crop_detect( [ 'fullscreen_color_nocrop_02.jpg' ], [
-    '60 10',
-    '3210 10',
-    '80 4240',
-    '3040 4490'
+test_crop_detect( [ '055.jpg' ], [
+    '1770 3470',
+    '10 3470',
+    '20 610',
+    '1790 620',
 ]);
+test_crop_detect( [ '067.jpg' ], [
+    '1760 3480',
+    '10 3470',
+    '30 610',
+    '1770 610',
+]);
+# This is not very square anyway
+#test_crop_detect( [ 'fullscreen_color_nocrop_02.jpg' ], [
+#    '60 10',
+#    '3210 10',
+#    '80 4240',
+#    '3040 4490'
+#]);
+
 test_crop_detect( [ 'fullscreen_nocrop_03.jpg' ], [
     '10 10',
     '3130 10',
