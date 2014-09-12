@@ -8,7 +8,8 @@ even_detect_crop = 94.5%x100%+0+0
 
 # odd_blank_page/even_blank_page: Specify blank pages to use for scan
 # lighting/background removal. These are not required but strongly advised as
-# they significantly improve the output and OCR quality.
+# they significantly improve the output and OCR quality. The closer to the
+# middle of the book they are the better.
 odd_blank_page = 083.jpg
 even_blank_page = 002.jpg
 
