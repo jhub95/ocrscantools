@@ -33,7 +33,7 @@ my %cmd = (
     pdf => \&create_pdf,
     text => \&create_text,
 );
-my @cmds = @ARGV ? @ARGV : ('pdf');
+my @cmds = @ARGV ? @ARGV : ('help');
 for my $cmd (@cmds) {
     if( $cmd{$cmd} ) {
         $cmd{$cmd}->();
