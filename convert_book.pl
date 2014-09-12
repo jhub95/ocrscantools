@@ -429,6 +429,7 @@ sub load_pages {
             page_type => $2 % 2 ? 'odd' : 'even'
         };
     }
+    die "No pages found" unless @pages;
     #@pages = grep { $_->{num} < 10 || $_->{num} == 209 } @pages;
 
     # autodetect crops for each page and find the largest width and height
