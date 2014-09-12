@@ -493,8 +493,6 @@ sub generate_masks {
     }, sub {
         my ($q) = @_;
 
-        return if $conf->opt( 'white_background' );
-
         for my $type ('odd', 'even') {
             my $name = $conf->opt( $type . '_blank_page' ) or next;
             my $page = first { $_->{file} eq "$INPUT_PATH/$name" } @$pages;   # XXX ugh use hash
