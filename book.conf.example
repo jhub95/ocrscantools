@@ -1,0 +1,36 @@
+# even_detect_crop/odd_detect_crop - specify the crops to run on the input
+# images before even running page detection. This is based on imagemagick crop
+# format (http://www.imagemagick.org/script/command-line-options.php?#crop)
+#
+# For the book scanner this is typically required to get page detection working
+# correctly on the right-hand pages:
+even_detect_crop = 94.5%x100%+0+0
+
+# odd_blank_page/even_blank_page: Specify blank pages to use for scan
+# lighting/background removal. These are not required but strongly advised as
+# they significantly improve the output and OCR quality.
+odd_blank_page = 083.jpg
+even_blank_page = 002.jpg
+
+# path: Which directory are the raw input files in. Defaults to 'raw'
+# path = raw_input
+
+# Specify middle_no_crop if the page boundaries are very close to the spine -
+# increases the area of readable text in to the center of the book
+#
+# middle_no_crop = 1
+
+# Level adjustment:
+# Specifying which color levels should just be assumed to be white and which
+# should be assumed to be black makes the image clearer, improves OCR and
+# reduces file size. These are based on the imagemagick level command
+# (http://www.imagemagick.org/script/command-line-options.php?#level).
+#
+# The default of:
+# level = 50%,98%
+#
+# Means that anything less than 50% brightness will darkened, whereas anything
+# close to white will be set to full white.
+#
+# For PDF files you can control the PDF output using 'output-level' option.  It
+# will default to level if not specified.
