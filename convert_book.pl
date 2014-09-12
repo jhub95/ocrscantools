@@ -49,8 +49,9 @@ for my $cmd (@cmds) {
 # * TODO go through and auto-detect white pages from the crop details, use these for page masks
 # * Create page mask to turn background into white (done in generate_masks()). Saved into tmp-mask directory
 # * Crop/distort/mask pages appropriately (done in generate_cropped_masked_img()). Saved into tmp-cropped_masked directory
-# * PDF Only: Detect any pure white pages and create dummy PDF for them (done in generate_white_bordered_img()).
-# * PDF Only: Crop any white edges off pages to reduce image size (done in generate_white_bordered_img())
+# * PDF Only: Detect any pure white pages and create dummy PDF for them (done in generate_white_bordered_img()). Saved into tmp-white_bordered directory
+# * TODO: We should do this white detection on text too to save running tesseract on the images
+# * PDF Only: Crop any white edges off pages to reduce image size (done in generate_white_bordered_img()). Saved into tmp-white_bordered directory
 # * PDF Only: Figure out if page is grayscale or not in order to reduce output size/complexity (done in generate_pdf_bg_img())
 # * PDF Only: Output small jpg for base of PDF (done in generate_pdf_bg_img()). Saved into tmp-pdf_bg directory
 # * Output large png for tesseract to OCR, look at doing some other cleanups prior to OCR (done in generate_ocr_img()). Saved into tmp-ocr-img-(pdf|text) directorys depending on method
