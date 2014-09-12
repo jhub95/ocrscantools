@@ -1,13 +1,21 @@
-See ~/data/documents/Work Abroad/Turkey/Books/unique_words/ for details of generating the 'mark' language etc
+See tesseract-train for details of rebuilding the tesseract language data
 
-To diff two files
+# To word-diff two files
 wdiff --no-common pdfout/009.txt text/009.txt
-perhaps -s option
+perhaps with the -s option to ignore spaces
 
-
-pdftotext -layout '/home/mark/documents/Work Abroad/Turkey/Books/Jerry_Mattix/Hey_Gavur/old/Hey Gavur, Anlatsana, 7. baski -son.pdf' - | perl splitter.pl
-
-
+# To test a book scan against a pdf do something like:
 pdftotext -layout /home/mark/documents/Work\ Abroad/Turkey/Books/Jerry_Mattix/Allah_Sevgidir/orig/Allah\ Sevgidir-son.pdf - | perl ../../script/splitter.pl
 cd pdfout
 for i in *; do wdiff  --no-common $i ../text/$i; done |wc -l
+
+
+
+== Installing patched version of tesseract ==
+
+apt-get source tesseract
+get pdf_background_image.patch
+cd tesseract-dir
+patch -p0 < ../pdf_background_image.patch
+dpkg-buildpackage
+

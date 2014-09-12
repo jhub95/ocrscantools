@@ -9,8 +9,9 @@ perl generate-text.pl
 ######################
 # Ensure that the tesseract sources for training etc have been checked out correctly
 git clone https://code.google.com/p/tesseract-ocr.langdata/
-$LANGDATA to this path
+set $LANGDATA to this path
 svn co http://tesseract-ocr.googlecode.com/svn/training
+set $TRAINPATH to be this path
 
 
 ######################
@@ -26,7 +27,7 @@ mkdir -p /tmp/tesstrain/tessdata/
 perl -ne 'BEGIN{print "v2\n"} if( !/^v1/ ){ s/ //g; @F=split /\t/; print "$F[1] $F[3] $F[4]" }' $LANGDATA/common.unicharambigs > hasat_tur/hasat_tur.unicharambigs
 cat hasat_tur/extraambigs >> hasat_tur/hasat_tur.unicharambigs
 
-TESSDATA_PREFIX=/usr/share/tesseract-ocr/tessdata/ ../tesseract-ocr/training/tesstrain.sh --lang hasat_tur --bin_dir /usr/bin --langdata_dir $LANGDATA \
+TESSDATA_PREFIX=/usr/share/tesseract-ocr/tessdata/ $TRAINPATH/tesstrain.sh --lang hasat_tur --bin_dir /usr/bin --langdata_dir $LANGDATA \
     --fonts_dir fonts \
     --fontlist 'Calibri Bold+Calibri+Calibri Italic+DejaVu Sans Mono+Arial+Arial Bold+Arial Italic+Times New Roman,+Times New Roman, Bold+Times New Roman, Italic' \
     --overwrite \
