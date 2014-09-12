@@ -22,6 +22,8 @@ my $s = BookScan->new(
 
 my $conf = 'BookConf';
 
+my $TESSERACT_LANG = 'hasat_tur';
+my $TESSERACT_CONF = 'hasat';
 my $INPUT_PATH = $conf->opt( 'path' ) || 'raw';
 my $DUMP_FILE = 'pages.dump';
 
@@ -296,9 +298,9 @@ sub create_text {
         if( !-f $page->{txt_file} ) {
             runcmd
                 'tesseract',
-                '-l' => 'mark',
+                '-l' => $TESSERACT_LANG,
                 $ocr_img => $txt_file_no_ext,
-                'mark';
+                $TESSERACT_CONF . '_txt';
         }
 
         return $page;
@@ -358,11 +360,11 @@ sub process_page_pdf {
         -c => 'pdf_background_image=' . $pdf_bg_img,
 
         # Language spec
-        -l => 'mark',
+        -l => $TESSERACT_LANG,
 
         $ocr_img => $out_pdf_noext,
 
-        'mark_pdf';
+        $TESSERACT_CONF . '_pdf';
 }
 
 # Run specified number of processes as subthread using queue. Returns when all
