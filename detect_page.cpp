@@ -15,9 +15,7 @@ typedef vector<vector<Point> > point_list;
 
 #define DOWNSIZE 10.0
 
-int debug = 0;  // XXX for better binary size you can #def this to 0
-int thresh = 50, N = 11;
-const char* wndname = "Square Detection Demo";
+int debug = 0;
 
 // helper function:
 // finds a cosine of angle between vectors
@@ -206,19 +204,21 @@ bool sortcmp( Point i, Point j ) {
 
 int main(int argc, char** argv)
 {
-    namedWindow( wndname, 1 );
     if( argc > 2 )
         debug = atoi( argv[2]);
 
+    if( debug )
+        namedWindow( "Debug window", 1 );
+
     // image.jpg
-    
+
     Mat image = imread(argv[1], 1);
     if( image.empty() )
     {
         cout << "Couldn't load " << argv[1] << endl;
         return 1;
     }
-    
+
     point_list squares = findSquares(image);
 
     // Debug for showing all the squares
