@@ -5,18 +5,22 @@ use warnings;
 use Config::General;
 
 my $CONF_FILE = 'book.conf';
+my %CONFIG;
 
-my $cg = Config::General->new(
-    -UTF8 => 1,
-    -ConfigFile => $CONF_FILE, 
-);
+sub init {
+    die "$CONF_FILE does not exist\n" if !-f $CONF_FILE;
 
+    my $cg = Config::General->new(
+        -UTF8 => 1,
+        -ConfigFile => $CONF_FILE, 
+    );
 
-my %CONFIG = (
-    # defaults
+    %CONFIG = (
+        # defaults
 
-    $cg->getall
-);
+        $cg->getall
+    );
+}
 
 sub opt {
     my ($self, $opt) = @_;
