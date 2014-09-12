@@ -11,9 +11,10 @@ perl generate-text.pl
 git clone https://code.google.com/p/tesseract-ocr.langdata/
 set $LANGDATA to this path
 LANGDATA=/home/bookscanner/tesseract/tesseract-ocr.langdata
-svn co http://tesseract-ocr.googlecode.com/svn/trunk/training
-set $TRAINPATH to be this path eg
-TRAINPATH=/home/bookscanner/tesseract/training
+svn co http://tesseract-ocr.googlecode.com/svn/trunk/ tesseract-src
+configure and then go into training directory and just build/install there.
+set $TRAINPATH to be this path/training eg
+TRAINPATH=/home/bookscanner/tesseract/tesseract-src/training
 
 
 ######################
