@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 # TODO
 # * PDF with HOCR output to merge rather than plain PDF output - hopefully fix that select text at beginning of PDF page issue
+# * ^C breaks partial PNG outputs sometimes - find out a way to kill off any .pngs that might have been underway or do it to tmp file and then move to proper?
 use threads;
 use utf8;
 use strict;
@@ -24,23 +25,37 @@ my $conf = 'BookConf';
 
 my $TESSERACT_LANG = 'hasat_tur';
 my $TESSERACT_CONF = 'hasat';
-my $INPUT_PATH = $conf->opt( 'path' ) || 'raw';
 my $DUMP_FILE = 'pages.dump';
 
-my %cmd = (
+my %CMD = (
     clean => \&clean,
     cleanall => sub { clean(1) },
     pdf => \&create_pdf,
     text => \&create_text,
 );
+
+eval { $conf->init };
+if( $@ ) {
+    show_help();
+    die $@;
+}
+
 my @cmds = @ARGV ? @ARGV : ('help');
+my @exec;
 for my $cmd (@cmds) {
-    if( $cmd{$cmd} ) {
-        $cmd{$cmd}->();
+    if( $CMD{$cmd} ) {
+        push @exec, $CMD{$cmd};
     } else {
-        warn "$0: Unknown command '$cmd' - please specify one of " . join(", ", sort keys %cmd) . "\n";
+        show_help();
+        warn "Unknown command '$cmd'\n";
         exit 1;
     }
+}
+$_->() for @exec;
+exit 0;
+
+sub show_help {
+    warn "$0 [cmds]\nAvailable commands are:  " . join(", ", sort keys %CMD) . "\n";
 }
 
 # Process:
@@ -58,7 +73,7 @@ for my $cmd (@cmds) {
 # * OCR and create output file from this (create_pdf() or create_text()) - output into pdf/ and text/ and then combined into book.pdf or book.txt
 
 sub initial_setup {
-    my $pages = load_pages($INPUT_PATH);
+    my $pages = load_pages(input_path());
     check_pages($pages);
     my $masks = generate_masks( $pages, $conf );
 
@@ -495,7 +510,7 @@ sub generate_masks {
 
         for my $type ('odd', 'even') {
             my $name = $conf->opt( $type . '_blank_page' ) or next;
-            my $page = first { $_->{file} eq "$INPUT_PATH/$name" } @$pages;   # XXX ugh use hash
+            my $page = first { $_->{file} eq input_path() . "/$name" } @$pages;   # XXX ugh use hash
 
             my $output = $s->_tmp_output_file( 'mask', $page->{page_type} . '_blank_mask.png' );
             #print Dumper $page;
@@ -555,10 +570,20 @@ sub clean {
     my @tmp = glob 'tmp-*';
     push @tmp, $DUMP_FILE, qw< pdf text > if $extra;
 
+    eval { _clean(@tmp) };
+    if( $@ ) {
+        sleep 3;    # Try again - stupid ntfs
+        _clean(@tmp);
+    }
+}
+
+sub _clean {
+    my (@tmp) = @_;
+
     for my $f (@tmp) {
         path($f)->remove_tree if -d $f;
         path($f)->remove if -f $f;
     }
-
-    exit;
 }
+
+sub input_path { $conf->opt( 'path' ) || 'raw' }
