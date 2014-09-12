@@ -24,7 +24,7 @@ while(<>) {
 #use Data::Dumper;
 #print Dumper \%chars;
 
-for my $w ( sort { $words{$b} <=> $words{$a} } keys %words ) {
+for my $w ( sort { $words{$b} <=> $words{$a} || $a cmp $b } keys %words ) {
     #my $c = $words{$w};
     #print "$w $c\n";
     print "$w\n";
