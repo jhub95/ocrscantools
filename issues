@@ -1,0 +1,36 @@
+* eg 159/104.png cropped cuts off last char of every line - probably due to 50px extra crop - perhaps disable for some sides ??
+* How to auto-detect white pages (and choose best one) ? Take auto cropped img & then check info: and then do a fuzzy crop thing to find the best?
+* Can we auto-detect levels? Small blur (3px?) then histogram to see where the black/white parts are & run over all imgs?
+
+Anadolu Azizleri:
+* Towards end even pages are triangled - distort needs correcting
+* Text is clear but first words on many pages are not being OCR'd
+* Images pretty dark
+
+760:
+* even crop detect includes red area so pages are skewed (at first anyway)
+
+679
+* First words of some pages are not recognised.
+* Because paper is old lots of specks - perhaps try to remove them somehow?
+* Some page borders overcropped down middle (?)
+
+1694
+* First 100 or so pages are virtually white and as a result poor text/cropping
+
+159
+* One camera had very poor quality
+
+1560
+* Page 054 rotated (?!)
+
+1427
+* Odd pages have top right page border on them
+* Again first few words of a page not recokognised
+
+General
+* Often it assumes font size is changing very quickly so confused by ', " or .....'s
+* Add in double arrows for quotes to allowed/trained chars
+* Perhaps some algo to detect triangled pages and correct ?
+
+* Seems to be some weird bug in tesseract that sometimes first few words of page are not output to PDF file - looks like an issue with pdfunite?

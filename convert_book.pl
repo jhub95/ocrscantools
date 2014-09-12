@@ -1,4 +1,6 @@
 #!/usr/bin/perl
+# TODO
+# * PDF with HOCR output to merge rather than plain PDF output - hopefully fix that select text at beginning of PDF page issue
 use threads;
 use utf8;
 use strict;
@@ -235,7 +237,8 @@ sub generate_ocr_img {
     # something for text we cant use that for PDF.
     my $ocr_img = $s->_tmp_page_file( "ocr-img-$type" , $page );
     if( $type eq 'text' && !-f $ocr_img ) {
-        $ocr_img = $s->_tmp_page_file( "ocr-img-pdf" , $page );
+        my $t = $s->_tmp_page_file( "ocr-img-pdf" , $page );
+        $ocr_img = $t if -f $t;
     }
     if( !-f $ocr_img ) {
         my $tmpimg = $s->_tmpfile( 'ocr_cleanup', '.png' );
@@ -304,7 +307,13 @@ sub create_text {
     # Combine and output text
     my $fh = path('book.txt')->openw_utf8;
     for my $page ( sort { $a->{num} <=> $b->{num} } @$pages ) {
-        my $text = path( $page->{txt_file} )->slurp_utf8;
+        my $f = path( $page->{txt_file} );
+        my $text = $f->slurp_utf8;
+
+        # Apply fixups to tesseract output and write back to file
+        $text =~ tr/`“”\x{2018}\x{2019}/'""''/;
+        $f->spew_utf8( $text );
+
         $fh->print( "---- page $page->{num} ----\n", $text, "\n" );
     }
 }
@@ -449,15 +458,17 @@ sub find_biggest_page_size {
 
 sub check_pages {
     my ($pages) = @_;
-    my @ok_pages;
+    # Ensure all pages have a dimension (ie autocrop worked)
+
+    # Kill head & tail without issue
+    shift @$pages while !$pages->[0]{dimensions};
+    pop @$pages while !$pages->[-1]{dimensions};
+
     for my $page ( @$pages ) {
         if( !$page->{dimensions} ) {
-            warn "Page $page->{num} couldn't detect page size - won't be processed\n"
-        } else {
-            push @ok_pages, $page;
+            die "Page $page->{num} couldn't detect page size - won't be processed\n"
         }
     }
-    @$pages = @ok_pages;
 }
 
 sub generate_masks {
