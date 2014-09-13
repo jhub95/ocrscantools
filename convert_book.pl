@@ -42,7 +42,7 @@ my %LANGS = (
     tur => 'hasat_tur',
     eng => 'eng',
 );
-my $DEFAULT_LANG = 'hasat_tur';
+my $DEFAULT_LANG = 'tur';
 
 my %CMD = (
     clean => \&clean,
