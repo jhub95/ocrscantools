@@ -1,5 +1,5 @@
 #!/bin/bash
-OPTS="-v -a --prune-empty-dirs"
+OPTS="-v -a --prune-empty-dirs --update"
 
 # Copy all files from pi - but only authoritative for the raw/ directories
 rsync $OPTS --include="*/" --include="*/raw/*" --exclude="**" spreads@10.0.0.75:/media/kitaplar/scans/ /depo/scans/

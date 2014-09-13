@@ -17,4 +17,7 @@ DIR=$(dirname $0)
     done
 
     $DIR/sync_pi.sh
+
+    # Human-readable output last
+    $DIR/check_undone_books.sh
 ) 9> /tmp/convert_book_lock
