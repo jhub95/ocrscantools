@@ -35,3 +35,6 @@ even_blank_page = 002.jpg
 #
 # For PDF files you can control the PDF output using 'output-level' option.  It
 # will default to level if not specified.
+
+# Language setting (at the moment tur/eng allowed)
+# language = tur

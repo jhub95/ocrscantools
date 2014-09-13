@@ -23,9 +23,15 @@ my $s = BookScan->new(
 
 my $conf = 'BookConf';
 
-my $TESSERACT_LANG = 'hasat_tur';
 my $TESSERACT_CONF = 'hasat';
 my $DUMP_FILE = 'pages.dump';
+
+# Mapping of specified language to tesseract language name
+my %LANGS = (
+    tur => 'hasat_tur',
+    eng => 'eng',
+);
+my $DEFAULT_LANG = 'hasat_tur';
 
 my %CMD = (
     clean => \&clean,
@@ -314,7 +320,7 @@ sub create_text {
         if( !-f $page->{txt_file} ) {
             runcmd
                 'tesseract',
-                '-l' => $TESSERACT_LANG,
+                '-l' => get_language(),
                 $ocr_img => $txt_file_no_ext,
                 $TESSERACT_CONF . '_txt';
         }
@@ -376,7 +382,7 @@ sub process_page_pdf {
         -c => 'pdf_background_image=' . $pdf_bg_img,
 
         # Language spec
-        -l => $TESSERACT_LANG,
+        -l => get_language(),
 
         $ocr_img => $out_pdf_noext,
 
@@ -587,3 +593,7 @@ sub _clean {
 }
 
 sub input_path { $conf->opt( 'path' ) || 'raw' }
+sub get_language {
+    my $lang = $conf->opt( 'language' ) || $DEFAULT_LANG;
+    return $LANGS{$lang} or die "Language $lang not allowed yet - add to config"
+}
