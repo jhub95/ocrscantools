@@ -2,6 +2,17 @@
 # TODO
 # * PDF with HOCR output to merge rather than plain PDF output - hopefully fix that select text at beginning of PDF page issue
 # * ^C breaks partial PNG outputs sometimes - find out a way to kill off any .pngs that might have been underway or do it to tmp file and then move to proper?
+# * Bug with pdfunite so that sometimes first few words of page are not output to PDF text file
+# * Often it assumes font size is changing very quickly so confused by ', " or .....'s
+# * Triangling of pages due to large stack of paper behind them eg Anadolu Azizleri 250 - needs a better autocrop algorithm to accurately determine the page structure - perhaps say if 6 corners then cut the 2 furthest away?? A bit difficult to do.
+# 
+# * Should auto-detect images and not apply the level adjustment to those areas of the picture ?
+# 
+# * How to auto-detect white pages (and choose best one) ? Take auto cropped img & then check info: and then do a fuzzy crop thing to find the best? But this isn't particularly good as borders can be pretty dark at times.
+# 
+# * Can we auto-detect levels? Small blur (3px?) then histogram to see where the black/white parts are & run over all imgs?
+# 
+# * Because paper is old lots of specks on 679 - perhaps try to remove them somehow? May end up damaging the text but could try an erode on the output image?
 use threads;
 use utf8;
 use strict;
