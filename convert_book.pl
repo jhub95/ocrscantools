@@ -34,6 +34,11 @@ my $s = BookScan->new(
 
 my $conf = 'BookConf';
 
+my $PDF_DPI_OUTPUT = $conf->opt('pdf-dpi') || 140;
+
+# This just defines the page size in final output
+my $INPUT_DPI = $conf->opt('input-dpi') || 300;
+
 my $TESSERACT_CONF = 'hasat';
 my $DUMP_FILE = 'pages.dump';
 
@@ -237,16 +242,18 @@ sub generate_pdf_bg_img {
         # Now output the image that's going to be visible to the user - loose
         # some resolution but keep the dimensions the same
 
-        # ratio of out_dpi:dpi defines how much we scale the image in the PDF.
-        # So for example if dpi is 300 and out_dpi is 150 then we would scale
-        # PDF to 50% of original size
-        my $out_dpi = 140;   
-        my $scale = sprintf "%0.2f%%", $out_dpi / $dpi * 100;
+        # see book.conf.example comment on 'pdf-dpi' option for fuller
+        # understanding of this code:
+        my $scale = sprintf "%0.2f%%", $PDF_DPI_OUTPUT / $dpi * 100;
+
+        # XXX grayscale with pictures requires a higher quality setting - this
+        # should actually be 'does this page have graphics on it' that we
+        # use.
+        my $quality = $is_grayscale ? ( $conf->opt( 'pdf-grayscale-quality' ) || 20 )
+                                : ( $conf->opt( 'pdf-color-quality' ) || 50 );
 
         runcmd 'convert', $input_img,
-
-            # XXX need to look to see if we can reduce/increase the quality...
-            -quality => $is_grayscale ? 20 : 50,
+            -quality => $quality,
 
             qw< -background white >,
 
@@ -258,7 +265,7 @@ sub generate_pdf_bg_img {
             -scale => $scale,
 
             # leptonica ie tesseract needs these settings to detect DPI properly
-            qw< -units PixelsPerInch >, -density => $out_dpi,
+            qw< -units PixelsPerInch >, -density => $PDF_DPI_OUTPUT,
 
             $pdf_bg_img;
     }
@@ -375,15 +382,12 @@ sub process_page_pdf {
     $page->{pdf_file} = $out_pdf;
     return if -f $out_pdf;
 
-    # This just defines the page size in final output
-    my $dpi = 300;
-
     my $cropped_masked_img = generate_cropped_masked_img( $page, $masks );
-    my $white_bordered_img = generate_white_bordered_img( $page, $cropped_masked_img, $pdf_page_size, $out_pdf, $dpi );
+    my $white_bordered_img = generate_white_bordered_img( $page, $cropped_masked_img, $pdf_page_size, $out_pdf, $INPUT_DPI );
     return if !$white_bordered_img && -f $out_pdf;  # May shortcut if whole image is white
 
-    my $pdf_bg_img = generate_pdf_bg_img( $page, $white_bordered_img, $dpi );
-    my $ocr_img = generate_ocr_img( 'pdf', $page, $white_bordered_img, $dpi );
+    my $pdf_bg_img = generate_pdf_bg_img( $page, $white_bordered_img, $INPUT_DPI );
+    my $ocr_img = generate_ocr_img( 'pdf', $page, $white_bordered_img, $INPUT_DPI );
 
     # Convert to an OCR'd PDF
     runcmd

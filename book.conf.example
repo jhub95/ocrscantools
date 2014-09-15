@@ -32,9 +32,36 @@ even_blank_page = 002.jpg
 #
 # Means that anything less than 50% brightness will darkened, whereas anything
 # close to white will be set to full white.
-#
-# For PDF files you can control the PDF output using 'output-level' option.  It
-# will default to level if not specified.
 
 # Language setting (at the moment tur/eng allowed)
 # language = tur
+
+###########################
+# PDF-only options
+#
+# For PDF files you can control levels of the the PDF output using
+# 'output-level' option (see 'level' above).  It will default to the same as
+# 'level' if not specified.
+#
+# Page sizing (DPI specification)
+# input-dpi specifies what the dpi of the input is. This is used for scaling
+# the PDF's we output ie if an image is 720px high and 72dpi then it would be
+# 10 inch page size output.
+#
+# input-dpi = 400
+#
+# The ratio of pdf-dpi:input-dpi defines how much we scale the image we include
+# in the PDF output. So for example if input-dpi is 300 and pdf-dpi is 150 then
+# we would reduce the quality of the PDF's included image to 50% of original
+# size (but keeping page size the same). This is because 
+# pdf-dpi = 140
+
+# Output image compression quality options:
+# For PDF's we want to heavily compress the images to reduce file size. For b&w
+# text a quality of 20 produces some visible artifacts but generally allows the
+# text to still be readable. For pictures we want more like 50 or 60 for
+# vaguely decent quality. If your scan contains grayscale images you should
+# perhaps raise the grayscale quality to 50 and reprocess the pdf.
+#
+# pdf-grayscale-quality = 20
+# pdf-color-quality = 50
