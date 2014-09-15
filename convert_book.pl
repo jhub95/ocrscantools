@@ -24,6 +24,7 @@ use Thread::Queue;
 use Sys::CpuAffinity;
 use File::Temp ();
 use FindBin::libs;
+use lib '/home/bookscanner/scantools/lib';
 use BookScan;
 use BookConf;
 binmode \*STDOUT => 'utf8';

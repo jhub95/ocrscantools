@@ -5,12 +5,15 @@ use Mouse;
 use File::Temp ();
 use List::Util qw< min max >;
 
-our @lib;
-use FindBin::libs 'export';
-my $path = $lib[0];
-
 has [qw< DEBUG AUTOCROP_DEBUG >] => ( is => 'rw' );
-has BASE => ( is => 'ro', default => "$path/.." );
+has BASE => ( is => 'ro', default => sub {
+    my $packpath = __PACKAGE__ . ".pm";
+    my $path = $INC{$packpath};
+    $path =~ s!\Q/lib/$packpath\E$!!;
+    #print "$path\n";
+    return $path;
+});
+
 
 sub _generate_crop {
     my ($self, $crop, $page_type) = @_;
