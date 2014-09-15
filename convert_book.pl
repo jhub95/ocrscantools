@@ -34,10 +34,10 @@ my $s = BookScan->new(
 
 my $conf = 'BookConf';
 
-my $PDF_DPI_OUTPUT = $conf->opt('pdf-dpi') || 140;
+my $PDF_DPI_OUTPUT = $conf->opt('pdf-dpi') || 180;
 
 # This just defines the page size in final output
-my $INPUT_DPI = $conf->opt('input-dpi') || 300;
+my $INPUT_DPI = $conf->opt('input-dpi') || 400;
 
 my $TESSERACT_CONF = 'hasat';
 my $DUMP_FILE = 'pages.dump';
@@ -92,7 +92,9 @@ sub show_help {
 # * PDF Only: Figure out if page is grayscale or not in order to reduce output size/complexity (done in generate_pdf_bg_img())
 # * PDF Only: Output small jpg for base of PDF (done in generate_pdf_bg_img()). Saved into tmp-pdf_bg directory
 # * Output large png for tesseract to OCR, look at doing some other cleanups prior to OCR (done in generate_ocr_img()). Saved into tmp-ocr-img-(pdf|text) directorys depending on method
-# * OCR and create output file from this (create_pdf() or create_text()) - output into pdf/ and text/ and then combined into book.pdf or book.txt
+# * OCR and create output file from this (process_page_pdf() or create_text()) - output each page into pdf/ and text/
+# * PDF Only: Check if there are covers (front.jpg, back.jpg) and if so convert them into PDF pages the same size as the others (generate_pdf_cover). Saved into pdf_covers directory.
+# * Combine into book.pdf or book.txt (create_pdf() or create_text())
 
 sub initial_setup {
     my $pages = load_pages(input_path());
@@ -171,7 +173,7 @@ sub generate_cropped_masked_img {
 }
 
 sub generate_white_bordered_img {
-    my ($page, $cropped_masked_img, $pdf_page_size, $out_pdf, $dpi) = @_;
+    my ($page, $cropped_masked_img, $pdf_page_size, $out_pdf) = @_;
     my $white_bordered_img = $s->_tmp_page_file( 'white_bordered', $page );
     if( !-f $white_bordered_img ) {
         my ($w,$h,$offx,$offy) = find_image_extent( $cropped_masked_img );
@@ -186,7 +188,7 @@ sub generate_white_bordered_img {
 
                 # dpi here is needed to get page sizing working in acrobat
                 qw< -units PixelsPerInch >,
-                '-density' => $dpi,
+                '-density' => $INPUT_DPI,
 
                 $out_pdf;
 
@@ -230,7 +232,7 @@ sub generate_white_bordered_img {
 }
 
 sub generate_pdf_bg_img {
-    my ($page, $input_img, $dpi) = @_;
+    my ($page, $input_img) = @_;
     my $pdf_bg_img = $s->_tmp_page_file( 'pdf_bg', $page, '.jpg' );
     if( !-f $pdf_bg_img ) {
         # Set pic to grayscale (1/3, 1/3, 1/3) and subtract it from the
@@ -241,10 +243,6 @@ sub generate_pdf_bg_img {
 
         # Now output the image that's going to be visible to the user - loose
         # some resolution but keep the dimensions the same
-
-        # see book.conf.example comment on 'pdf-dpi' option for fuller
-        # understanding of this code:
-        my $scale = sprintf "%0.2f%%", $PDF_DPI_OUTPUT / $dpi * 100;
 
         # XXX grayscale with pictures requires a higher quality setting - this
         # should actually be 'does this page have graphics on it' that we
@@ -262,7 +260,7 @@ sub generate_pdf_bg_img {
 
             ( $is_grayscale ? qw< -colorspace gray > : () ),
 
-            -scale => $scale,
+            -scale => get_pdf_scale(),
 
             # leptonica ie tesseract needs these settings to detect DPI properly
             qw< -units PixelsPerInch >, -density => $PDF_DPI_OUTPUT,
@@ -273,7 +271,7 @@ sub generate_pdf_bg_img {
 }
 
 sub generate_ocr_img {
-    my ($type, $page, $input_img, $dpi) = @_;
+    my ($type, $page, $input_img) = @_;
 
     # If we did this for PDF previously use that file, otherwise if there was
     # something for text we cant use that for PDF.
@@ -310,7 +308,7 @@ sub generate_ocr_img {
             #qw< -filter triangle -resize 300% >,
 
             # leptonica ie tesseract needs these settings to detect DPI properly
-            qw< -units PixelsPerInch >, -density => $dpi,# * 3,
+            qw< -units PixelsPerInch >, -density => $INPUT_DPI,# * 3,
 
             #'+repage',
             $ocr_img;
@@ -360,6 +358,48 @@ sub create_text {
     }
 }
 
+sub _get_pdf_scale { return $PDF_DPI_OUTPUT / $INPUT_DPI }
+sub get_pdf_scale {
+    # see book.conf.example comment on 'pdf-dpi' option for fuller
+    # understanding of this code:
+    return sprintf "%0.2f%%", _get_pdf_scale() * 100
+}
+
+# Given a cover image and a pdf page size create a pdf page 
+sub generate_pdf_cover {
+    my ($type, $pdf_page_size) = @_;
+    my $input_img = "$type.jpg";
+    return () if !-f $input_img;
+
+    my $pdf_cover_img = $s->output_file( 'pdf_covers', "$type.pdf" );
+    if( !-f $pdf_cover_img ) {
+        my $quality = $conf->opt( 'pdf-color-quality' ) || 50;
+        my $small_pdf_page_size = $pdf_page_size;
+        $small_pdf_page_size =~ s/([\d.]+)/int( $1 * _get_pdf_scale() )/eg;
+
+        runcmd 'convert',
+            qw< -gravity center +geometry >,
+
+            $input_img,
+            '-auto-orient',
+            -resize => $small_pdf_page_size,
+
+            # Not sure why -extent is needed but it is for page centering...
+            -page => $small_pdf_page_size,
+            -extent => $small_pdf_page_size,
+
+            -quality => $quality,
+
+            qw< -units PixelsPerInch >, -density => $PDF_DPI_OUTPUT,
+
+            '+repage',
+
+            $pdf_cover_img;
+    }
+
+    return $pdf_cover_img;
+}
+
 sub create_pdf {
     return if -f 'book.pdf';
     my ($pages, $masks) = initial_setup();
@@ -371,7 +411,11 @@ sub create_pdf {
         return $page
     }, $pages, 4/3 );
 
-    runcmd 'pdfunite', map({ $_->{pdf_file} } sort { $a->{num} <=> $b->{num} } @$pages), 'book.pdf';
+    my @pdf_pages = map { $_->{pdf_file} } sort { $a->{num} <=> $b->{num} } @$pages;
+
+    runcmd 'pdfunite',
+            generate_pdf_cover('front', $pdf_page_size), @pdf_pages, generate_pdf_cover('back', $pdf_page_size)
+            => 'book.pdf';
 }
 
 sub process_page_pdf {
@@ -383,11 +427,11 @@ sub process_page_pdf {
     return if -f $out_pdf;
 
     my $cropped_masked_img = generate_cropped_masked_img( $page, $masks );
-    my $white_bordered_img = generate_white_bordered_img( $page, $cropped_masked_img, $pdf_page_size, $out_pdf, $INPUT_DPI );
+    my $white_bordered_img = generate_white_bordered_img( $page, $cropped_masked_img, $pdf_page_size, $out_pdf );
     return if !$white_bordered_img && -f $out_pdf;  # May shortcut if whole image is white
 
-    my $pdf_bg_img = generate_pdf_bg_img( $page, $white_bordered_img, $INPUT_DPI );
-    my $ocr_img = generate_ocr_img( 'pdf', $page, $white_bordered_img, $INPUT_DPI );
+    my $pdf_bg_img = generate_pdf_bg_img( $page, $white_bordered_img );
+    my $ocr_img = generate_ocr_img( 'pdf', $page, $white_bordered_img );
 
     # Convert to an OCR'd PDF
     runcmd
@@ -589,7 +633,7 @@ sub is_grayscale {
 sub clean {
     my ($extra) = @_;
     my @tmp = glob 'tmp-*';
-    push @tmp, $DUMP_FILE, qw< pdf text > if $extra;
+    push @tmp, $DUMP_FILE, qw< pdf text pdf_covers > if $extra;
 
     eval { _clean(@tmp) };
     if( $@ ) {
