@@ -647,8 +647,10 @@ sub check_pages {
     # Ensure all pages have a dimension (ie autocrop worked)
 
     # Kill head & tail without issue
-    shift @$pages while !$pages->[0]{dimensions};
-    pop @$pages while !$pages->[-1]{dimensions};
+    shift @$pages while @$pages and !$pages->[0]{dimensions};
+    pop @$pages while @$pages and !$pages->[-1]{dimensions};
+
+    die "No pages found" if !@$pages;
 
     for my $page ( @$pages ) {
         if( !$page->{dimensions} ) {
