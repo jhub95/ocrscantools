@@ -82,7 +82,7 @@ sub show_help {
 
 # Process:
 # * Detect crops/distortion info (done in load_pages()). Saves this info into pages.dump
-# * Crop and distort pages to turn the picture into an image of the page (crop_and_distort_pages()). Saved into tmp-cropped_masked directory
+# * Crop and distort pages to turn the picture into an image of the page (crop_and_distort_pages()). Saved into tmp-cropped_distorted directory
 # * Go through and auto-detect white pages (find_mask_pages()), change these into page masks for removing background. Saved into tmp-mask directory.
 # * Resave pages.dump
 # * PDF Only: Work out general page size for output (done in find_biggest_page_size())
@@ -115,7 +115,7 @@ sub initial_setup {
 sub crop_and_distort_pages {
     my ($pages) = @_;
 
-    @$pages = run_array( sub {
+    @$pages = run_pages( sub {
         my ($page) = @_;
 
         my $out = $page->{cropped_distorted} = $s->_tmp_page_file( 'cropped_distorted', $page );
@@ -140,54 +140,60 @@ sub crop_and_distort_pages {
 sub find_mask_pages {
     my ($pages) = @_;
 
-    my @mask_pages = run_array( sub {
+    my @mask_pages = run_pages( sub {
         my ($page) = @_;
 
         return $s->is_blank( $page->{cropped_distorted} ) ? $page : 0;
     }, $pages);
 
     # Mark the pages as blank to save processing later
-    my %blanks = map { $_->{num} => 1 } @mask_pages;
-    for (@$pages) {
-        $_->{is_blank} = 1 if exists $blanks{$_->{num}};
-    }
+    my %blanks;
+    $blanks{$_->{page_type}}{$_->{num}} = $_ for @mask_pages;
 
-    # XXX should use all blank pages as masks and base which one to use on
-    # which page is closest to which mask page.
-    my %masks;
-    my $mid_page = @$pages / 2;
+    # Add in any that are specified explicitly. XXX remove this code when
+    # certain that blank autodetection works properly
     for my $type (qw< odd even >) {
-        my $best;
-
         if( my $name = $conf->opt( $type . '_blank_page' ) ) {
-            my @pages = grep { $_->{page_type} eq $type } @mask_pages;
-            $best = first { $_->{file} eq input_path() . "/$name" } grep { $_->{page_type} eq $type } @$pages;   # XXX ugh use hash
-        } else {
-            my @mpages = grep { $_->{page_type} eq $type } @mask_pages;
-            if( !@mpages ) {
-                die "No $type mask pages detected. Please specify manually using '${type}_blank_page' configuration option\n";
-                next;
-            }
+            my $p = first { $_->{file} eq input_path() . "/$name" } grep { $_->{page_type} eq $type } @$pages;
 
-            # Find page closest to the center of the book to use for mask
-            $_->{score} = abs( $_->{num} - $mid_page ) for @mpages;
-            $best = (sort { $a->{score} <=> $b->{score} } @mpages)[0];
+            # Override detected blanks
+            $blanks{$type} = { $p->{num} => $p };
         }
 
-        die "No best $type mask page found. Shouldn't happen" if !$best;
+        if( !values %{$blanks{$type}} ) {
+            die "No $type mask pages detected. Please specify manually using '${type}_blank_page' configuration option\n";
+            next;
+        }
 
-        my $output = $masks{$type} = $s->_tmp_output_file( 'mask', $type . '_blank_mask.png' );
-
-        # XXX parallel?
-        runcmd( 'convert',
-            $best->{cropped_distorted},
-            '-blur' => '0x10',  # Get rid of any text or marks that may just be on this page
-            $output
-        );
+    }
+    @mask_pages = map { values %{$_} } values %blanks;
+    # XXX changes to @mask_pages here dont affect the pages array
+    for( @mask_pages ) {
+        $_->{mask_file} = $s->_tmp_page_file( 'mask', $_ );
     }
 
-    for(@$pages) {
-        $_->{mask} = $masks{$_->{page_type}} if exists $masks{$_->{page_type}};
+    run_pages(sub {
+        my ($page) = @_;
+
+        runcmd( 'convert',
+            $page->{cropped_distorted},
+            '-blur' => '0x10',  # Get rid of any text or marks that may just be on this page
+            $page->{mask_file}
+        );
+    }, \@mask_pages);
+
+    # Now find the closest mask page to each page and set its mask to that
+    for my $page (@$pages) {
+        my @opts;
+        while( my ($num, $m) = each %{$blanks{$page->{page_type}}} ) {
+            $page->{is_blank} = 1 if $num == $page->{num};
+            push @opts, {
+                score => abs( $num - $page->{num} ),
+                mask => $m
+            };
+        }
+        my $best = (sort { $a->{score} <=> $b->{score} } @opts)[0];
+        $page->{mask} = $best->{mask}{mask_file};
     }
 
     return $pages;
@@ -407,7 +413,7 @@ sub create_text {
     # text mode as we dont need to know the overall max page dimensions.
     my ($pages) = initial_setup();
 
-    @$pages = run_array( sub {
+    @$pages = run_pages( sub {
         my ($page) = @_;
 
         my $cropped_masked_img = img_remove_background( $page );
@@ -490,13 +496,13 @@ sub create_pdf {
     my ($pages) = initial_setup();
     my $pdf_page_size = find_biggest_page_size( $pages );
 
-    @$pages = run_array( sub {
+    @$pages = run_pages( sub {
         my ($page) = @_;
         process_page_pdf($page, $pdf_page_size);
         return $page
     }, $pages, 4/3 );
 
-    my @pdf_pages = map { $_->{pdf_file} } sort { $a->{num} <=> $b->{num} } @$pages;
+    my @pdf_pages = map { $_->{pdf_file} } @$pages;
 
     runcmd 'pdfunite',
             generate_pdf_cover('front', $pdf_page_size), @pdf_pages, generate_pdf_cover('back', $pdf_page_size)
@@ -512,6 +518,7 @@ sub process_page_pdf {
     return if -f $out_pdf;
 
     my $cropped_masked_img = img_remove_background( $page );
+    # XXX do the shortcut if $page->{is_blank}
     my $white_bordered_img = generate_white_bordered_img( $page, $cropped_masked_img, $pdf_page_size, $out_pdf );
     return if !$white_bordered_img && -f $out_pdf;  # May shortcut if whole image is white
 
@@ -559,6 +566,7 @@ sub run_multi {
 sub run_array {
     my ($sub, $items, @args) = @_;
     my $return_q = Thread::Queue->new;
+    die "No items" if !@$items;
 
     run_multi( sub {
         my ($item) = @_;
@@ -575,6 +583,11 @@ sub run_array {
         push @ret, $item;
     }
     return @ret;
+}
+
+sub run_pages {
+    my ($sub, $pages, @args) = @_;
+    return sort { $a->{num} <=> $b->{num} } run_array($sub, $pages, @args);
 }
 
 sub load_pages {
@@ -599,12 +612,11 @@ sub load_pages {
     #@pages = grep { $_->{num} < 10 || $_->{num} == 209 } @pages;
 
     # autodetect crops for each page and find the largest width and height
-    @pages = run_array( sub {
+    @pages = run_pages( sub {
         my ($page) = @_;
         get_crop_args( $page );
         return $page;
     }, \@pages );
-    @pages = sort { $a->{num} <=> $b->{num} } @pages;
 
     save_pages( \@pages );
 
