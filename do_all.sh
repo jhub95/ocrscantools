@@ -21,3 +21,8 @@ DIR=$(dirname $0)
     # Human-readable output last
     $DIR/check_undone_books.sh
 ) 9> /tmp/convert_book_lock
+
+# Clean up lock file to allow other users to run the script
+if [ "$?" = 0 ]; then
+    rm /tmp/convert_book_lock
+fi
