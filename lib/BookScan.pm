@@ -140,6 +140,14 @@ sub runcmd {
     }
 }
 
+sub runcmd_get_output {
+    my ($self, @cmd) = @_;
+    my $cmd = join " ", @cmd;
+    #warn $cmd;
+    chomp( my $out = `$cmd` );
+    return $out;
+}
+
 sub _tmpfile {
     my ($self, $name, $ext, %extra) = @_;
     return File::Temp->new(
@@ -163,6 +171,41 @@ sub output_file {
     my ($self, $type, $name) = @_;
     mkdir $type if !-d $type;
     return "$type/$name";
+}
+
+sub is_blank {
+    my ($self, $file) = @_;
+
+    my @cmd = (
+        'convert',
+            $file,
+
+            # For speed - equivelent of a 10x10 blur
+            -resize => '10%',
+
+            # No need to worry about colour
+            -colorspace => 'gray',
+
+            # Blur by a few px just to remove any specks still remaining
+            -blur => '0x3',
+
+            # Now use -lat to figure out if this is brighter than anything
+            # else in the area. Should produce a pure black and white image
+            # black areas being text, white being not.
+            -lat => '15x15,-3%',
+
+            # Trim from the borders (which should be white)
+            qw< -bordercolor white -border 1 -trim >,
+
+            -format => '"%[fx:w] %[fx:h]"',
+            'info:'
+    );
+    my ($w, $h) = split / /, $self->runcmd_get_output(@cmd, '2>/dev/null');
+    if( $w == 1 && $h == 1 ) {  # 1x1 px image means was blank
+        return 1;
+    }
+
+    return 0;
 }
 
 1

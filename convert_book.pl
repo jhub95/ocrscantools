@@ -82,10 +82,11 @@ sub show_help {
 
 # Process:
 # * Detect crops/distortion info (done in load_pages()). Saves this info into pages.dump
-# * PDF Only: Work out general page size from this (done in find_biggest_page_size())
-# * TODO go through and auto-detect white pages from the crop details, use these for page masks
-# * Create page mask to turn background into white (done in generate_masks()). Saved into tmp-mask directory
-# * Crop/distort/mask pages appropriately (done in generate_cropped_masked_img()). Saved into tmp-cropped_masked directory
+# * Crop and distort pages to turn the picture into an image of the page (crop_and_distort_pages()). Saved into tmp-cropped_masked directory
+# * Go through and auto-detect white pages (find_mask_pages()), change these into page masks for removing background. Saved into tmp-mask directory.
+# * Resave pages.dump
+# * PDF Only: Work out general page size for output (done in find_biggest_page_size())
+# * Mask pages to remove the background, align image based on lines (deskew) (done in img_remove_background()). Saved into tmp-cropped_masked directory
 # * PDF Only: Detect any pure white pages and create dummy PDF for them (done in generate_white_bordered_img()). Saved into tmp-white_bordered directory
 # * TODO: We should do this white detection on text too to save running tesseract on the images
 # * PDF Only: Crop any white edges off pages to reduce image size (done in generate_white_bordered_img()). Saved into tmp-white_bordered directory
@@ -99,9 +100,91 @@ sub show_help {
 sub initial_setup {
     my $pages = load_pages(input_path());
     check_pages($pages);
-    my $masks = generate_masks( $pages, $conf );
 
-    return ($pages, $masks);
+    crop_and_distort_pages( $pages );
+
+    if( grep { !exists $_->{mask} || !-f $_->{mask} } @$pages ) {
+        # Ensure that all pages are masked otherwise try to find one
+        $pages = find_mask_pages( $pages );
+        save_pages( $pages );
+    }
+
+    return ($pages);
+}
+
+sub crop_and_distort_pages {
+    my ($pages) = @_;
+
+    @$pages = run_array( sub {
+        my ($page) = @_;
+
+        my $out = $page->{cropped_distorted} = $s->_tmp_page_file( 'cropped_distorted', $page );
+        if( !-f $out ) {
+            runcmd( 'convert',
+                $page->{file},
+                '-auto-orient',
+
+                # Figure out crop bounds so that we get the page in a picture
+                @{ $page->{im_crop_args} },
+                '+repage',
+                $out
+            );
+        }
+
+        return $page;
+    }, $pages);
+
+    return $pages;
+}
+
+sub find_mask_pages {
+    my ($pages) = @_;
+
+    my @mask_pages = run_array( sub {
+        my ($page) = @_;
+
+        return $s->is_blank( $page->{cropped_distorted} ) ? $page : 0;
+    }, $pages);
+
+    # XXX should use all blank pages as masks and base which one to use on
+    # which page is closest to which mask page.
+    my %masks;
+    my $mid_page = @$pages / 2;
+    for my $type (qw< odd even >) {
+        my $best;
+
+        if( my $name = $conf->opt( $type . '_blank_page' ) ) {
+            my @pages = grep { $_->{page_type} eq $type } @mask_pages;
+            $best = first { $_->{file} eq input_path() . "/$name" } grep { $_->{page_type} eq $type } @$pages;   # XXX ugh use hash
+        } else {
+            my @mpages = grep { $_->{page_type} eq $type } @mask_pages;
+            if( !@mpages ) {
+                die "No $type mask pages detected. Please specify manually using '${type}_blank_page' configuration option\n";
+                next;
+            }
+
+            # Find page closest to the center of the book to use for mask
+            $_->{score} = abs( $_->{num} - $mid_page ) for @mpages;
+            $best = (sort { $a->{score} <=> $b->{score} } @mpages)[0];
+        }
+
+        die "No best $type mask page found. Shouldn't happen" if !$best;
+
+        my $output = $masks{$type} = $s->_tmp_output_file( 'mask', $type . '_blank_mask.png' );
+
+        # XXX parallel?
+        runcmd( 'convert',
+            $best->{cropped_distorted},
+            '-blur' => '0x10',  # Get rid of any text or marks that may just be on this page
+            $output
+        );
+    }
+
+    for(@$pages) {
+        $_->{mask} = $masks{$_->{page_type}} if exists $masks{$_->{page_type}};
+    }
+
+    return $pages;
 }
 
 sub get_crop_args {
@@ -126,22 +209,19 @@ sub get_crop_args {
 }
 
 sub runcmd { $s->runcmd( @_ ) }
+sub runcmd_get_output { $s->runcmd_get_output( @_ ) }
 
-sub generate_cropped_masked_img {
-    my ($page, $masks) = @_;
-    my $cropped_masked_img = $s->_tmp_page_file( 'cropped_masked', $page );
-    if( !-f $cropped_masked_img ) {
+sub img_remove_background {
+    my ($page) = @_;
+    my $removed_bg_img = $s->_tmp_page_file( 'cropped_masked', $page );
+    if( !-f $removed_bg_img ) {
         my @cmd = (
             'convert',
-                $page->{file},
-                '-auto-orient',
-
-                # Figure out crop bounds so that we get the page in a picture
-                @{ $page->{im_crop_args} },
+            $page->{cropped_distorted}
         );
 
         # Use a merge to try to get rid of background
-        if( my $maskf = $masks->{$page->{page_type}} ) {
+        if( my $maskf = $page->{mask} ) {
             my ($w, $h) = @{$page->{dimensions}} or die;
             push @cmd,
                 $maskf,
@@ -166,10 +246,10 @@ sub generate_cropped_masked_img {
             '-deskew' => '80%',
             '+repage';
 
-        runcmd( @cmd => $cropped_masked_img );
+        runcmd( @cmd => $removed_bg_img );
     }
 
-    return $cropped_masked_img;
+    return $removed_bg_img;
 }
 
 sub generate_white_bordered_img {
@@ -320,12 +400,12 @@ sub create_text {
     return if -f 'book.txt';
     # TODO Actually this initial setup can be done on a page-by-page basis in
     # text mode as we dont need to know the overall max page dimensions.
-    my ($pages, $masks) = initial_setup();
+    my ($pages) = initial_setup();
 
     @$pages = run_array( sub {
         my ($page) = @_;
 
-        my $cropped_masked_img = generate_cropped_masked_img( $page, $masks );
+        my $cropped_masked_img = img_remove_background( $page );
         # Because we skip a few stages here (not doing white masks etc) the PDF
         # version cannot use our generated OCR images here but we can use the
         # version that was created for the PDF
@@ -402,12 +482,12 @@ sub generate_pdf_cover {
 
 sub create_pdf {
     return if -f 'book.pdf';
-    my ($pages, $masks) = initial_setup();
+    my ($pages) = initial_setup();
     my $pdf_page_size = find_biggest_page_size( $pages );
 
     @$pages = run_array( sub {
         my ($page) = @_;
-        process_page_pdf($page, $pdf_page_size, $masks);
+        process_page_pdf($page, $pdf_page_size);
         return $page
     }, $pages, 4/3 );
 
@@ -419,14 +499,14 @@ sub create_pdf {
 }
 
 sub process_page_pdf {
-    my ($page, $pdf_page_size, $masks) = @_;
+    my ($page, $pdf_page_size) = @_;
 
     my $out_pdf_noext = $s->output_page_file( 'pdf', $page, '' );
     my $out_pdf = "$out_pdf_noext.pdf";
     $page->{pdf_file} = $out_pdf;
     return if -f $out_pdf;
 
-    my $cropped_masked_img = generate_cropped_masked_img( $page, $masks );
+    my $cropped_masked_img = img_remove_background( $page );
     my $white_bordered_img = generate_white_bordered_img( $page, $cropped_masked_img, $pdf_page_size, $out_pdf );
     return if !$white_bordered_img && -f $out_pdf;  # May shortcut if whole image is white
 
@@ -521,9 +601,14 @@ sub load_pages {
     }, \@pages );
     @pages = sort { $a->{num} <=> $b->{num} } @pages;
 
-    path($DUMP_FILE)->spew( Dumper(\@pages) );
+    save_pages( \@pages );
 
     return \@pages;
+}
+
+sub save_pages {
+    my ($pages) = @_;
+    path($DUMP_FILE)->spew( Dumper($pages) );
 }
 
 sub find_biggest_page_size {
@@ -555,43 +640,6 @@ sub check_pages {
     }
 }
 
-sub generate_masks {
-    my ($pages, $conf) = @_;
-
-    my %masks;
-    run_multi( sub {
-        my ($page) = @_;
-
-        runcmd( 'convert',
-            $page->{file},
-            '-auto-orient',
-            @{$page->{im_crop_args}},
-            '+repage',
-            '-blur' => '0x10',  # Get rid of any text or marks that may just be on this page
-            $page->{output}
-        );
-    }, sub {
-        my ($q) = @_;
-
-        for my $type ('odd', 'even') {
-            my $name = $conf->opt( $type . '_blank_page' ) or next;
-            my $page = first { $_->{file} eq input_path() . "/$name" } @$pages;   # XXX ugh use hash
-
-            my $output = $s->_tmp_output_file( 'mask', $page->{page_type} . '_blank_mask.png' );
-            #print Dumper $page;
-            $masks{$type} = $output;
-            next if -f $output;
-
-            $q->enqueue( {
-                %$page,
-                output => $output
-            });
-        }
-    });
-
-    return \%masks;
-}
-
 # Returns width/height and top x/y of the non-white area of the image
 sub find_image_extent {
     my ($img) = @_;
@@ -605,7 +653,7 @@ sub find_image_extent {
 
         # Insert white border to ensure we only trim white. As we don't
         # repage this wont get counted in the final output
-        qw< -virtual-pixel edge -bordercolor white -border 1 >,
+        qw< -bordercolor white -border 1 >,
 
         # Fuzz so that anything within 20% of white is counted as such
         qw< -fuzz 20% -trim >,
@@ -613,11 +661,8 @@ sub find_image_extent {
         '-format' => '"%[fx:w] %[fx:h] %[fx:page.x] %[fx:page.y]"',
         'info:'
     );
-    my $cmd = join " ", @cmd;
 
-    chomp( my $out = `$cmd` );
-    #warn "$out\n";
-    return split / /, $out;
+    return split / /, runcmd_get_output( @cmd );
 }
 
 # Return true if image is grayscale, false if colour.
@@ -625,7 +670,7 @@ sub is_grayscale {
     my ($img) = @_;
 
     # Clone image to grayscale, subtract from initial image and then check to see if there is anything other than black left over.
-    my $max_color_diff = `convert $img -scale 25% \\( +clone -modulate 100,0 \\) -compose Difference -composite -level 10% -format '%[fx:maxima]' info:`;
+    my $max_color_diff = runcmd_get_output("convert $img -scale 25% \\( +clone -modulate 100,0 \\) -compose Difference -composite -level 10% -format '%[fx:maxima]' info:");
 
     return $max_color_diff < 0.05;
 }
