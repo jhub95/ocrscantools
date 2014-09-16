@@ -264,28 +264,32 @@ sub img_remove_background {
     return $removed_bg_img;
 }
 
+sub generate_blank_pdf {
+    my ($pdf_page_size, $out_pdf) = @_;
+
+    # image was totally blank, just output a blank PDF
+    runcmd 'convert',
+        # Create single white pixel on PDF page (actually can do without this but probably not with convert tool)
+        qw< ( -page >, $pdf_page_size, qw< xc:white ) >,
+
+        '+repage',
+
+        # dpi here is needed to get page sizing working in acrobat
+        qw< -units PixelsPerInch >,
+        '-density' => $INPUT_DPI,
+
+        $out_pdf;
+}
+
 sub generate_white_bordered_img {
-    my ($page, $cropped_masked_img, $pdf_page_size, $out_pdf) = @_;
+    my ($page, $cropped_masked_img, $pdf_page_size) = @_;
     my $white_bordered_img = $s->_tmp_page_file( 'white_bordered', $page );
     if( !-f $white_bordered_img ) {
-        if( $page->{is_blank} ) {
-            # image was totally blank, just output a blank PDF
-            runcmd 'convert',
-                # Create single white pixel on PDF page (actually can do without this but probably not with convert tool)
-                qw< ( -page >, $pdf_page_size, qw< xc:white ) >,
-
-                '+repage',
-
-                # dpi here is needed to get page sizing working in acrobat
-                qw< -units PixelsPerInch >,
-                '-density' => $INPUT_DPI,
-
-                $out_pdf;
-
-            return;
-        }
-
         my ($w,$h,$offx,$offy) = find_image_extent( $cropped_masked_img );
+        if( $w < 5 && $h < 5 ) {
+            # XXX actually was blank
+            die "Page was blank"
+        }
 
         # Expand a bit to avoid cropping key side stuff (but if
         # larger than specified image above won't do anything)
@@ -417,6 +421,8 @@ sub create_text {
     @$pages = run_pages( sub {
         my ($page) = @_;
 
+        return if $page->{is_blank};
+
         my $cropped_masked_img = img_remove_background( $page );
         # Because we skip a few stages here (not doing white masks etc) the PDF
         # version cannot use our generated OCR images here but we can use the
@@ -518,10 +524,14 @@ sub process_page_pdf {
     $page->{pdf_file} = $out_pdf;
     return if -f $out_pdf;
 
+    # Shortcut blank pages
+    if( $page->{is_blank} ) {
+        generate_blank_pdf( $pdf_page_size, $out_pdf);
+        return;
+    }
+
     my $cropped_masked_img = img_remove_background( $page );
-    # XXX do the shortcut if $page->{is_blank}
-    my $white_bordered_img = generate_white_bordered_img( $page, $cropped_masked_img, $pdf_page_size, $out_pdf );
-    return if !$white_bordered_img && -f $out_pdf;  # May shortcut if whole image is white
+    my $white_bordered_img = generate_white_bordered_img( $page, $cropped_masked_img, $pdf_page_size );
 
     my $pdf_bg_img = generate_pdf_bg_img( $page, $white_bordered_img );
     my $ocr_img = generate_ocr_img( 'pdf', $page, $white_bordered_img );
