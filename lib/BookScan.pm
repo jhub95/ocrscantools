@@ -143,7 +143,7 @@ sub runcmd {
 sub runcmd_get_output {
     my ($self, @cmd) = @_;
     my $cmd = join " ", @cmd;
-    #warn $cmd;
+    warn "$cmd\n" if $self->DEBUG;
     chomp( my $out = `$cmd` );
     return $out;
 }
@@ -186,13 +186,18 @@ sub is_blank {
             # No need to worry about colour
             -colorspace => 'gray',
 
+            -gravity => 'center',
+            -crop => '96%x96%',     # cut off some border specs
+
+            '+repage',
+
             # Blur by a few px just to remove any specks still remaining
             -blur => '0x3',
 
             # Now use -lat to figure out if this is brighter than anything
             # else in the area. Should produce a pure black and white image
             # black areas being text, white being not.
-            -lat => '15x15,-3%',
+            -lat => '15x15,-4%',
 
             # Trim from the borders (which should be white)
             qw< -bordercolor white -border 1 -trim >,
