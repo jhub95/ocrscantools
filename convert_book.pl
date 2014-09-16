@@ -103,8 +103,8 @@ sub initial_setup {
 
     crop_and_distort_pages( $pages );
 
+    # Ensure that all pages are masked and the files exist otherwise redo process
     if( grep { !exists $_->{mask} || !-f $_->{mask} } @$pages ) {
-        # Ensure that all pages are masked otherwise try to find one
         $pages = find_mask_pages( $pages );
         save_pages( $pages );
     }
@@ -145,6 +145,12 @@ sub find_mask_pages {
 
         return $s->is_blank( $page->{cropped_distorted} ) ? $page : 0;
     }, $pages);
+
+    # Mark the pages as blank to save processing later
+    my %blanks = map { $_->{num} => 1 } @mask_pages;
+    for (@$pages) {
+        $_->{is_blank} = 1 if exists $blanks{$_->{num}};
+    }
 
     # XXX should use all blank pages as masks and base which one to use on
     # which page is closest to which mask page.
@@ -192,8 +198,7 @@ sub get_crop_args {
     my $page_type = $page->{page_type};
 
     if( my $crop = $conf->opt( $page_type . '_page_crop' ) ) {
-        die;
-        #warn "Manual crop specified";
+        die "Manual crop specified";
         #$page->{im_crop_args} = [ -crop => $crop ];
         #$page->{dimensions} = [ $crop =~ /^(\d+)x(\d+)/x ];
     } else {
@@ -256,9 +261,7 @@ sub generate_white_bordered_img {
     my ($page, $cropped_masked_img, $pdf_page_size, $out_pdf) = @_;
     my $white_bordered_img = $s->_tmp_page_file( 'white_bordered', $page );
     if( !-f $white_bordered_img ) {
-        my ($w,$h,$offx,$offy) = find_image_extent( $cropped_masked_img );
-
-        if( $w < 5 || $h < 5 ) {
+        if( $page->{is_blank} ) {
             # image was totally blank, just output a blank PDF
             runcmd 'convert',
                 # Create single white pixel on PDF page (actually can do without this but probably not with convert tool)
@@ -274,6 +277,8 @@ sub generate_white_bordered_img {
 
             return;
         }
+
+        my ($w,$h,$offx,$offy) = find_image_extent( $cropped_masked_img );
 
         # Expand a bit to avoid cropping key side stuff (but if
         # larger than specified image above won't do anything)
