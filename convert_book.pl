@@ -413,7 +413,10 @@ sub generate_ocr_img {
 }
 
 sub create_text {
-    return if -f 'book.txt';
+    if( -f 'book.txt' ) {
+        warn "book.txt already exists - not doing anything\n";
+        return;
+    }
     # TODO Actually this initial setup can be done on a page-by-page basis in
     # text mode as we dont need to know the overall max page dimensions.
     my ($pages) = initial_setup();
@@ -499,7 +502,10 @@ sub generate_pdf_cover {
 }
 
 sub create_pdf {
-    return if -f 'book.pdf';
+    if( -f 'book.pdf' ) {
+        warn "book.pdf already exists - not doing anything\n";
+        return;
+    }
     my ($pages) = initial_setup();
     my $pdf_page_size = find_biggest_page_size( $pages );
 
