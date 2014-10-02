@@ -7,17 +7,23 @@
 even_detect_crop = 94.5%x100%+0+0
 
 # odd_blank_page/even_blank_page: Specify blank pages to use for scan
-# lighting/background removal. These are not required but strongly advised as
-# they significantly improve the output and OCR quality. The closer to the
-# middle of the book they are the better.
-odd_blank_page = 083.jpg
-even_blank_page = 002.jpg
+# lighting/background removal. These are not absolutely required for operation
+# but the program will die if they are not found. By default now we detect
+# blank pages in the book and use the one closest to the current page as a
+# mask. If the auto-detection cannot work then you should specify manually (or
+# if no blank page then create a white file with similar dimensions to the
+# scan.
+#
+# odd_blank_page = 083.jpg
+# even_blank_page = 002.jpg
 
 # path: Which directory are the raw input files in. Defaults to 'raw'
 # path = raw_input
 
 # Specify middle_no_crop if the page boundaries are very close to the spine -
-# increases the area of readable text in to the center of the book
+# increases the area of readable text in to the center of the book. Perhaps
+# should be a default but the risk is that you get nasty lines if you don't
+# crop in a bit
 #
 # middle_no_crop = 1
 

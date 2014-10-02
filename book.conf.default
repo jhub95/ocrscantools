@@ -1,0 +1,10 @@
+# This is the default book.conf that will be added to all new scans. The
+# original file is at /home/bookscanner/scantools/book.conf.default
+
+# For the book scanner this is typically required to get page detection working
+# correctly on the right-hand pages:
+even_detect_crop = 94.5%x100%+0+0
+
+# Specify middle_no_crop if the page boundaries are very close to the spine -
+# increases the area of readable text in to the center of the book.
+middle_no_crop = 1

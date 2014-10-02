@@ -6,3 +6,9 @@ rsync $OPTS --include="*/" --include="*/raw/*" --include="book.conf" --include="
 
 # Copy all the book.conf and book output files over to the pi for backup purposes ignoring everything else
 rsync $OPTS --include="*/" --include="*/book.*" --exclude="**" /depo/scans/ spreads@10.0.0.75:/media/kitaplar/scans/
+
+for i in /depo/scans/*; do
+    if [[ ! -f "$i/book.conf" && -f "$i/raw/010.jpg" ]]; then
+        cp /home/bookscanner/scantools/book.conf.default "$i/book.conf"
+    fi
+done
