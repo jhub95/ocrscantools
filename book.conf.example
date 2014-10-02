@@ -71,3 +71,10 @@ even_detect_crop = 94.5%x100%+0+0
 #
 # pdf-grayscale-quality = 20
 # pdf-color-quality = 50
+
+# Extra padding on the pages
+# horiz_padding/vert_padding will add the specified amount every page's
+# width/height while maintaining the centering of the text. Useful for
+# increasing margins in output
+# horiz_padding = 100
+# vert_padding = 20

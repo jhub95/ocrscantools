@@ -656,6 +656,9 @@ sub find_biggest_page_size {
         }
     }
 
+    $biggest_crop[0] += $conf->opt( 'horiz_padding' ) || 0;
+    $biggest_crop[1] += $conf->opt( 'vert_padding' ) || 0;
+
     return join "x", @biggest_crop;
 }
 
