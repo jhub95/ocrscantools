@@ -1,6 +1,6 @@
 #######################
 # For Mark to generate the text files from all tr ebooks we have:
-in ~/Documents/Work\ Abroad/Turkey/Books/txt
+in ~/Documents/Work\ Abroad/Turkey/Books
 mod2vpl TurNTB | perl -pe 's/<[^>]+>//g' > txt/turntb.txt
 
 # Convert all books to text
@@ -16,6 +16,9 @@ configure and then go into training directory and just build/install there.
 set $TRAINPATH to be this path/training eg
 TRAINPATH=/home/bookscanner/tesseract/tesseract-src/training
 
+#mark
+LANGDATA=~/tmp/tesseract-ocr.langdata
+TRAINPATH=~/tmp/tesseract/ocr/training
 
 ######################
 # Every time:
@@ -30,6 +33,7 @@ mkdir -p /tmp/tesstrain/tessdata/
 perl -ne 'BEGIN{print "v2\n"} if( !/^v1/ ){ s/ //g; @F=split /\t/; print "$F[1] $F[3] $F[4]" }' $LANGDATA/common.unicharambigs > hasat_tur/hasat_tur.unicharambigs
 cat hasat_tur/extraambigs >> hasat_tur/hasat_tur.unicharambigs
 
+# copy any fonts from 
 TESSDATA_PREFIX=/usr/share/tesseract-ocr/tessdata/ $TRAINPATH/tesstrain.sh --lang hasat_tur --bin_dir /usr/bin --langdata_dir $LANGDATA \
     --fonts_dir fonts \
     --fontlist 'Calibri Bold+Calibri+Calibri Italic+DejaVu Sans Mono+Arial+Arial Bold+Arial Italic+Times New Roman,+Times New Roman, Bold+Times New Roman, Italic' \

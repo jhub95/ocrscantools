@@ -10,6 +10,7 @@ use common;
 
 use open qw(:std :utf8);
 
+my $MAX = 500;
 
 # Print out up to 30 of the most common words for a given letter, given a set of input text
 
@@ -33,7 +34,6 @@ while(<>) {
 #print Dumper \%chars;
 my @words;
 
-my $MAX = 150;
 while( my ($c, $d) = each %chars ) {
     my $w = $d->{words};
     my @order = sort { $w->{$b} <=> $w->{$a} } keys %$w;
