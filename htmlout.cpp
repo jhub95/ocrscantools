@@ -3,6 +3,7 @@
 #include <string>
 #include <list>
 #include <iostream>
+#include <fstream>
 #include <tesseract/baseapi.h>
 #include <tesseract/publictypes.h>
 #include <leptonica/allheaders.h>
@@ -35,7 +36,7 @@ string check_add_images( int top ) {
 
 int img_counter = 0;
 tesseract::TessBaseAPI *api;
-string process_file( char *img ) {
+string process_file( char *img_base, char *img ) {
     string html_str = "";
 
     // Open input image with leptonica library
@@ -73,7 +74,8 @@ string process_file( char *img ) {
 
         Box* lbox = boxCreate(b.left, b.top, w, h);
         Pix* img_part = pixClipRectangle( image, lbox, NULL );
-        string filename = "img_" + to_string( img_counter ) + ".png";
+        string filename = img_base + to_string( img_counter ) + ".png";
+        //cerr << "filename: " << filename << endl;
 
         pixWritePng(filename.c_str(), img_part, 1);
         boxaAddBox( maskboxa, lbox, 0 );
@@ -114,6 +116,7 @@ string process_file( char *img ) {
     //pixWritePng("out.png", image, 1);     // debugging purposes
 
     api->SetImage(image);
+    api->SetSourceResolution(300);  // XXX why is this needed should autodetect...?!
 
     /* For some reason doing a component image split and then working through
      * each as a single block tends to get the best tesseract recognition. No
@@ -128,6 +131,7 @@ string process_file( char *img ) {
 
     api->SetPageSegMode(PSM_SINGLE_BLOCK);
 
+    api->SetVariable("save_blob_choices", "T");
     /*
     api->SetVariable("tessedit_write_images", "1");
     api->ProcessPage(image, 0, "blah", "blah", 0, (TessResultRenderer*)NULL);
@@ -164,6 +168,7 @@ string process_file( char *img ) {
 
           // Average the font size of the paragraph out as tesseract doesnt usually
           // have it very accurately for each word.
+          //cerr << font_name << " " << pointsize << "pt" << endl;
           wcnt++;
           word_font_size += pointsize;
 
@@ -238,23 +243,32 @@ string process_file( char *img ) {
           res_it->Next(RIL_WORD);
           */
           do {
-            const char *grapheme = res_it->GetUTF8Text(RIL_SYMBOL);
-            if (grapheme && grapheme[0] != 0) {
-              if (grapheme[1] == 0) {
-                switch (grapheme[0]) {
-                  case '<': para_str += "&lt;"; break;
-                  case '>': para_str += "&gt;"; break;
-                  case '&': para_str += "&amp;"; break;
-                  case '"': para_str += "&quot;"; break;
-                  case '\'': para_str += "&#39;"; break;
-                  default: para_str += grapheme;
+              const char *grapheme = res_it->GetUTF8Text(RIL_SYMBOL);
+
+              /*
+              cerr << "Main: " << res_it->GetUTF8Text(RIL_SYMBOL) << " (" << conf << ")" << endl;
+              ChoiceIterator ci(*res_it);
+              do {
+                  cerr << "Alt: " << ci.GetUTF8Text() << " (" << ci.Confidence() << ")" << endl;
+              } while(ci.Next());
+              */
+
+              if (grapheme && grapheme[0] != 0) {
+                if (grapheme[1] == 0) {
+                  switch (grapheme[0]) {
+                    case '<': para_str += "&lt;"; break;
+                    case '>': para_str += "&gt;"; break;
+                    case '&': para_str += "&amp;"; break;
+                    case '"': para_str += "&quot;"; break;
+                    case '\'': para_str += "&#39;"; break;
+                    default: para_str += grapheme;
+                  }
+                } else {
+                  para_str += grapheme;
                 }
-              } else {
-                para_str += grapheme;
               }
-            }
-            delete []grapheme;
-            res_it->Next(RIL_SYMBOL);
+              delete []grapheme;
+              res_it->Next(RIL_SYMBOL);
           } while (!res_it->Empty(RIL_BLOCK) && !res_it->IsAtBeginningOf(RIL_WORD));
 
           /* HYPHENATION:
@@ -285,7 +299,7 @@ string process_file( char *img ) {
               para_str += " ";
 
           if (last_word_in_para && wcnt) {
-              html_str += "<p style='font-size: " + to_string( word_font_size / wcnt ) + "px'>" + para_str + "\n</p>\n";
+              html_str += "<p style='font-size: " + to_string( word_font_size / wcnt ) + "pt'>" + para_str + "\n</p>\n";
               para_str = "";
               wcnt = 0;
               word_font_size = 0;
@@ -309,16 +323,33 @@ string process_file( char *img ) {
 }
 
 int main(int argc, char *argv[]) {
-    api = new tesseract::TessBaseAPI();
-    if (api->Init(NULL, "hasat_tur")) {
-        fprintf(stderr, "Could not initialize tesseract.\n");
-        exit(1);
+    if( argc < 5 ) {
+        cerr << "usage:" << endl;
+        cerr << argv[0] << " <lang> <img_base> <file> <output file> [config file]" << endl;
+        return 1;
     }
 
+    api = new tesseract::TessBaseAPI();
+    if (api->Init(NULL, argv[1])) {
+        cerr << "Could not initialize tesseract.\n";
+        return 1;
+    }
+    if( argc > 5 )
+        api->ReadConfigFile(argv[5]);
+
+/*
     cout << "<!DOCTYPE html>\n<html><head><meta charset='utf-8' /><link rel='stylesheet' href='out.css'></head><body>" << endl;
     for( int i=1; i<argc; i++)
         cout << process_file(argv[i]) << endl;
     cout << "</body></html>" << endl;
+    */
+    ofstream outfile (argv[4]);
+    if (!outfile.is_open()) {
+        cerr << "Cannot open file for writing: " << argv[4] << endl;
+        return 1;
+    }
+    outfile << process_file(argv[2], argv[3]) << endl;
+    outfile.close();
 
     api->End();
 

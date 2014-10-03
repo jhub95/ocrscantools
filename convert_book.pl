@@ -55,6 +55,7 @@ my %CMD = (
     cleanall => sub { clean(1) },
     pdf => \&create_pdf,
     text => \&create_text,
+    html => \&create_html,
 );
 
 eval { $conf->init };
@@ -430,7 +431,7 @@ sub create_text {
         # Because we skip a few stages here (not doing white masks etc) the PDF
         # version cannot use our generated OCR images here but we can use the
         # version that was created for the PDF
-        my $ocr_img = generate_ocr_img( 'text', $page, $cropped_masked_img, 300 );
+        my $ocr_img = generate_ocr_img( 'text', $page, $cropped_masked_img );
 
         my $txt_file_no_ext = $s->output_page_file( 'text', $page, '');
         $page->{txt_file} = "$txt_file_no_ext.txt";
@@ -457,6 +458,55 @@ sub create_text {
 
         $fh->print( "---- page $page->{num} ----\n", $text, "\n" );
     }
+}
+
+sub create_html {
+    if( -f 'book.html' ) {
+        warn "book.html already exists - not doing anything\n";
+        return;
+    }
+    # TODO Actually this initial setup can be done on a page-by-page basis in
+    # text mode as we dont need to know the overall max page dimensions.
+    my ($pages) = initial_setup();
+
+    @$pages = run_pages( sub {
+        my ($page) = @_;
+
+        return if $page->{is_blank};
+
+        my $cropped_masked_img = img_remove_background( $page );
+        # Because we skip a few stages here (not doing white masks etc) the PDF
+        # version cannot use our generated OCR images here but we can use the
+        # version that was created for the PDF
+        my $ocr_img = generate_ocr_img( 'text', $page, $cropped_masked_img );
+
+        $page->{html_file} = $s->output_page_file( 'html', $page, '.html');
+        mkdir "html/imgs";
+        if( !-f $page->{html_file} ) {
+            runcmd
+                $s->BASE . '/htmlout',
+                get_language(),
+                "html/imgs/img_$page->{num}_",
+                $ocr_img => $page->{html_file},
+                $TESSERACT_CONF . '_txt';
+        }
+
+        return $page;
+    }, $pages, 4/3 );
+
+    # Combine and output text
+    my $fh = path('book.html')->openw_utf8;
+    $fh->print("<!DOCTYPE html>\n<html><head><meta charset='utf-8' /><link rel='stylesheet' href='out.css'></head><body>\n");
+    for my $page ( sort { $a->{num} <=> $b->{num} } @$pages ) {
+        my $f = path( $page->{html_file} );
+        my $text = $f->slurp_utf8;
+
+        # Apply fixups to tesseract output and write back to file
+        $text =~ tr/`“”\x{2018}\x{2019}/'""''/;
+        $f->spew_utf8( $text );
+        $fh->print( $text );
+    }
+    $fh->print("</body></html>\n");
 }
 
 sub _get_pdf_scale { return $PDF_DPI_OUTPUT / $INPUT_DPI }
@@ -717,7 +767,7 @@ sub is_grayscale {
 sub clean {
     my ($extra) = @_;
     my @tmp = glob 'tmp-*';
-    push @tmp, $DUMP_FILE, qw< pdf text pdf_covers > if $extra;
+    push @tmp, $DUMP_FILE, qw< pdf html text pdf_covers > if $extra;
 
     eval { _clean(@tmp) };
     if( $@ ) {
