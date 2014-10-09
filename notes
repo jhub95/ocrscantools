@@ -6,8 +6,8 @@ perhaps with the -s option to ignore spaces
 
 # To test a book scan against a pdf do something like:
 pdftotext -layout /home/mark/documents/Work\ Abroad/Turkey/Books/Jerry_Mattix/Allah_Sevgidir/orig/Allah\ Sevgidir-son.pdf - | perl ../../script/splitter.pl
-cd pdfout
-for i in *; do wdiff  --no-common $i ../text/$i; done |wc -l
+# Number of differences (a difference could be quite large)
+for i in pdfout/*; do wdiff  --no-common $i text-fewpages/${i#pdfout}; done |grep -c '====='
 
 
 

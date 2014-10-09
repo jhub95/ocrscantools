@@ -1,5 +1,6 @@
 #!/usr/bin/perl
 use strict;
+use utf8;
 use warnings;
 use Unicode::Normalize 'NFC';
 use FindBin;
@@ -28,4 +29,11 @@ for my $w ( sort { $words{$b} <=> $words{$a} || $a cmp $b } keys %words ) {
     #my $c = $words{$w};
     #print "$w $c\n";
     print "$w\n";
+    if( $w =~ /'/ ) {
+        for my $rep (qw< ‘ ’ ` >) {
+            my $t = $w;
+            $t =~ s/'/$rep/g;
+            print "$t\n";
+        }
+    }
 }

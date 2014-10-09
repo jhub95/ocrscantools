@@ -453,7 +453,8 @@ sub create_text {
         my $text = $f->slurp_utf8;
 
         # Apply fixups to tesseract output and write back to file
-        $text =~ tr/`“”\x{2018}\x{2019}/'""''/;
+        $text =~ tr/`“”\x{2018}\x{2019}’/'""'''/;
+        $text =~ s/\x{fb01}/fi/g;
         $f->spew_utf8( $text );
 
         $fh->print( "---- page $page->{num} ----\n", $text, "\n" );

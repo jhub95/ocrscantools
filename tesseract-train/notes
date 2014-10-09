@@ -1,7 +1,15 @@
+    #--fontlist 'Arial+Arial Bold+Arial Bold Italic+Arial Italic+Calibri+Calibri Bold+Calibri Bold Italic+Calibri Italic+Courier New+Georgia+Georgia Bold+Georgia Bold Italic+Georgia Italic+Life BT+Myriad Pro+Myriad Pro Bold Condensed+Myriad Pro Italic+Tahoma+Tahoma Bold+Times New Roman,+Times New Roman, Bold+Times New Roman, Bold Italic+Times New Roman, Italic+Trebuchet MS+Trebuchet MS Bold+Trebuchet MS Bold Italic+Trebuchet MS Italic+Verdana+Verdana Bold+Verdana Bold Italic+Verdana Italic+Worcester Round Becker Med' \
 To try:
 Kill BOX_PADDING
 Increase CHAR_SPACING (see what it should be)
 - see if this fixes the APPLY_BOXES errors
+
+# Training notes:
+# * Best work for tess training seems to be having BOX_PADDING=0, LEADING=8 (ie lines closer together)
+# * Less fonts seems to work better for the shape tables etc - perhaps train per-font?
+# * numbers file really makes a different with verse refs
+# * Having loads of text to train with doesnt seem to do much
+
 
 # Edit tesstrain.sh and set:
 # make sure nothing of the word is cut off
@@ -54,10 +62,11 @@ TESSDATA_PREFIX=/usr/share/tesseract-ocr/tessdata/ $TRAINPATH/tesstrain.sh --lan
     --training_text 'hasat_tur/training' \
     --wordlist hasat_tur/wordlist
 
-    #--fontlist 'Arial+Arial Bold+Arial Bold Italic+Arial Italic+Calibri+Calibri Bold+Calibri Bold Italic+Calibri Italic+Courier New+Georgia+Georgia Bold+Georgia Bold Italic+Georgia Italic+Life BT+Myriad Pro+Myriad Pro Bold Condensed+Myriad Pro Italic+Tahoma+Tahoma Bold+Times New Roman,+Times New Roman, Bold+Times New Roman, Bold Italic+Times New Roman, Italic+Trebuchet MS+Trebuchet MS Bold+Trebuchet MS Bold Italic+Trebuchet MS Italic+Verdana+Verdana Bold+Verdana Bold Italic+Verdana Italic+Worcester Round Becker Med' \
 
-
+# Add in extra files now
 cp hasat_tur/hasat_tur.unicharambigs /tmp/tesstrain/hasat_tur/
+wordlist2dawg hasat_tur/hasat_tur.number /tmp/tesstrain/hasat_tur/hasat_tur.number-dawg /tmp/tesstrain/hasat_tur/hasat_tur.unicharset
+wordlist2dawg hasat_tur/hasat_tur.punc /tmp/tesstrain/hasat_tur/hasat_tur.punc-dawg /tmp/tesstrain/hasat_tur/hasat_tur.unicharset
 combine_tessdata /tmp/tesstrain/hasat_tur/hasat_tur.
 
 sudo cp /tmp/tesstrain/hasat_tur/hasat_tur.traineddata /usr/share/tesseract-ocr/tessdata/hasat_tur.traineddata
