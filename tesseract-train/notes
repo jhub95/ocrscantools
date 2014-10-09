@@ -1,3 +1,16 @@
+To try:
+Kill BOX_PADDING
+Increase CHAR_SPACING (see what it should be)
+- see if this fixes the APPLY_BOXES errors
+
+# Edit tesstrain.sh and set:
+# make sure nothing of the word is cut off
+BOX_PADDING="1"
+# Tie lines closer to each other for more realism
+LEADING="8"
+# Change ligatures like ff etc into utf8 single char that then maps to 2 chars
+        common_args+=" --ligatures=1"
+
 #######################
 # For Mark to generate the text files from all tr ebooks we have:
 in ~/Documents/Work\ Abroad/Turkey/Books
@@ -18,7 +31,7 @@ TRAINPATH=/home/bookscanner/tesseract/tesseract-src/training
 
 #mark
 LANGDATA=~/tmp/tesseract-ocr.langdata
-TRAINPATH=~/tmp/tesseract/ocr/training
+TRAINPATH=~/tmp/tesseract-ocr/training
 
 ######################
 # Every time:
@@ -36,10 +49,15 @@ cat hasat_tur/extraambigs >> hasat_tur/hasat_tur.unicharambigs
 # copy any fonts from 
 TESSDATA_PREFIX=/usr/share/tesseract-ocr/tessdata/ $TRAINPATH/tesstrain.sh --lang hasat_tur --bin_dir /usr/bin --langdata_dir $LANGDATA \
     --fonts_dir fonts \
-    --fontlist 'Calibri Bold+Calibri+Calibri Italic+DejaVu Sans Mono+Arial+Arial Bold+Arial Italic+Times New Roman,+Times New Roman, Bold+Times New Roman, Italic' \
+    --fontlist 'Arial+Arial Bold+Arial Italic+Calibri+Calibri Bold+Calibri Italic+Courier New+Times New Roman,+Times New Roman, Bold+Times New Roman, Bold Italic+Times New Roman, Italic+Verdana+Verdana Bold' \
     --overwrite \
     --training_text 'hasat_tur/training' \
     --wordlist hasat_tur/wordlist
 
-cp /tmp/tesstrain/hasat_tur/hasat_tur.traineddata .
-sudo cp hasat_tur.traineddata /usr/share/tesseract-ocr/tessdata/
+    #--fontlist 'Arial+Arial Bold+Arial Bold Italic+Arial Italic+Calibri+Calibri Bold+Calibri Bold Italic+Calibri Italic+Courier New+Georgia+Georgia Bold+Georgia Bold Italic+Georgia Italic+Life BT+Myriad Pro+Myriad Pro Bold Condensed+Myriad Pro Italic+Tahoma+Tahoma Bold+Times New Roman,+Times New Roman, Bold+Times New Roman, Bold Italic+Times New Roman, Italic+Trebuchet MS+Trebuchet MS Bold+Trebuchet MS Bold Italic+Trebuchet MS Italic+Verdana+Verdana Bold+Verdana Bold Italic+Verdana Italic+Worcester Round Becker Med' \
+
+
+cp hasat_tur/hasat_tur.unicharambigs /tmp/tesstrain/hasat_tur/
+combine_tessdata /tmp/tesstrain/hasat_tur/hasat_tur.
+
+sudo cp /tmp/tesstrain/hasat_tur/hasat_tur.traineddata /usr/share/tesseract-ocr/tessdata/hasat_tur.traineddata
