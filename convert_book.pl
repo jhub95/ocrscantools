@@ -40,7 +40,7 @@ my $PDF_DPI_OUTPUT = $conf->opt('pdf-dpi') || 180;
 # This just defines the page size in final output
 my $INPUT_DPI = $conf->opt('input-dpi') || 400;
 
-my $TESSERACT_CONF = 'hasat';
+my $TESSERACT_CONF = 'hasat_txt';
 my $DUMP_FILE = 'pages.dump';
 
 # Mapping of specified language to tesseract language name
@@ -440,7 +440,7 @@ sub create_text {
                 'tesseract',
                 '-l' => get_language(),
                 $ocr_img => $txt_file_no_ext,
-                $TESSERACT_CONF . '_txt';
+                $TESSERACT_CONF;
         }
 
         return $page;
@@ -489,7 +489,7 @@ sub create_html {
                 get_language(),
                 "html/imgs/img_$page->{num}_",
                 $ocr_img => $page->{html_file},
-                $TESSERACT_CONF . '_txt';
+                $TESSERACT_CONF;
         }
 
         return $page;
@@ -599,13 +599,14 @@ sub process_page_pdf {
 
         # Use our provided image
         -c => 'pdf_background_image=' . $pdf_bg_img,
+        -c => 'tessedit_create_pdf=1',
 
         # Language spec
         -l => get_language(),
 
         $ocr_img => $out_pdf_noext,
 
-        $TESSERACT_CONF . '_pdf';
+        $TESSERACT_CONF;
 }
 
 # Run specified number of processes as subthread using queue. Returns when all
@@ -787,6 +788,8 @@ sub _clean {
 }
 
 sub input_path { $conf->opt( 'path' ) || 'raw' }
+
+# XXX for multiple languages just return a spec like eng+hasat_tur
 sub get_language {
     my $lang = $conf->opt( 'language' ) || $DEFAULT_LANG;
     return $LANGS{$lang} or die "Language $lang not allowed yet - add to config"

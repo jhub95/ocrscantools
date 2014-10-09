@@ -11,6 +11,11 @@ Increase CHAR_SPACING (see what it should be)
 # * Having loads of text to train with doesnt seem to do much
 
 
+# To debug what tesseract 'sees':
+SCROLLVIEW_PATH=/home/mark/Downloads/tesseract-3.03.02/java tesseract -c interactive_display_mode=T -l tur tmp-cropped_masked/013.png -
+
+# Changes on a new install:
+
 # Edit tesstrain.sh and set:
 # make sure nothing of the word is cut off
 BOX_PADDING="1"
