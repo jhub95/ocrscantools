@@ -47,6 +47,7 @@ my $DEFAULT_LANG = 'tur';
 my %CMD = (
     clean => \&clean,
     cleanall => sub { clean(1) },
+    clean_everything => sub { clean(2) },
     pdf => \&create_pdf,
     text => \&create_text,
     html => \&create_html,
@@ -74,6 +75,12 @@ exit 0;
 
 sub show_help {
     warn "$0 [cmds]\nAvailable commands are:  " . join(", ", sort keys %CMD) . "\n";
+    warn <<EOF;
+clean: Kill temporary files
+cleanall: like clean but also remove the per-page output files
+clean_everything: Remove everything other than config and raw
+pdf, text, html: Output the specified format
+EOF
 }
 
 # Process:
@@ -788,6 +795,7 @@ sub clean {
     my ($extra) = @_;
     my @tmp = glob 'tmp-*';
     push @tmp, $DUMP_FILE, qw< pdf html_imgs html text pdf_covers > if $extra;
+    push @tmp, qw< book.pdf book.txt bookhtml > if $extra == 2;
 
     eval { _clean(@tmp) };
     if( $@ ) {
