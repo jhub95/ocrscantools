@@ -81,17 +81,18 @@ sub show_help {
 # * Crop and distort pages to turn the picture into an image of the page (crop_and_distort_pages()). Saved into tmp-cropped_distorted directory
 # * Go through and auto-detect white pages (find_mask_pages()), change these into page masks for removing background. Saved into tmp-mask directory.
 # * Resave pages.dump
-# * PDF Only: Work out general page size for output (done in find_biggest_page_size())
 # * Mask pages to remove the background, align image based on lines (deskew) (done in img_remove_background()). Saved into tmp-cropped_masked directory
-# * PDF Only: Detect any pure white pages and create dummy PDF for them (done in generate_white_bordered_img()). Saved into tmp-white_bordered directory
-# * TODO: We should do this white detection on text too to save running tesseract on the images
-# * PDF Only: Crop any white edges off pages to reduce image size (done in generate_white_bordered_img()). Saved into tmp-white_bordered directory
-# * PDF Only: Figure out if page is grayscale or not in order to reduce output size/complexity (done in generate_pdf_bg_img())
-# * PDF Only: Output small jpg for base of PDF (done in generate_pdf_bg_img()). Saved into tmp-pdf_bg directory
+# * PDF Only:
+#    - Crop any white edges off pages to reduce image size (done in generate_white_bordered_img()). Saved into tmp-white_bordered directory
+#    TODO: We should do this white detection on text too to save running tesseract on the images
+#    - Figure out if page is grayscale or not in order to reduce output size/complexity (done in generate_pdf_bg_img())
+#    - Output small jpg for base of PDF (done in generate_pdf_bg_img()). Saved into tmp-pdf_bg directory
 # * Output large png for tesseract to OCR, look at doing some other cleanups prior to OCR (done in generate_ocr_img()). Saved into tmp-ocr-img-(pdf|text) directorys depending on method
-# * OCR and create output file from this (process_page_pdf() or create_text()) - output each page into pdf/ and text/
-# * PDF Only: Check if there are covers (front.jpg, back.jpg) and if so convert them into PDF pages the same size as the others (generate_pdf_cover). Saved into pdf_covers directory.
-# * Combine into book.pdf or book.txt (create_pdf() or create_text())
+# * OCR and create output file from this (process_page_pdf() or create_text()) - output each page into hocr/ and text/
+# * PDF Only:
+#    - Work out general page size for output (done in find_biggest_page_size())
+#    - Check if there are covers (front.jpg, back.jpg) and if so convert them into PDF pages the same size as the others (generate_pdf_cover). Saved into pdf_covers directory.
+# * Combine into output (create_pdf(), create_html() or create_text()). For PDF we actually output hocr and then use hocr2pdf to combine with the different images
 
 sub initial_setup {
     my $pages = load_pages(input_path());
@@ -435,8 +436,9 @@ sub create_text {
 }
 
 sub create_html {
-    if( -f 'book.html' ) {
-        warn "book.html already exists - not doing anything\n";
+    my $html_file = 'book.html';
+    if( -f $html_file ) {
+        warn "$html_file already exists - not doing anything\n";
         return;
     }
     # TODO Actually this initial setup can be done on a page-by-page basis in
@@ -469,7 +471,7 @@ sub create_html {
     }, $pages, 4/3 );
 
     # Combine and output text
-    my $fh = path('book.html')->openw_utf8;
+    my $fh = path($html_file)->openw_utf8;
     $fh->print("<!DOCTYPE html>\n<html><head><meta charset='utf-8' /><link rel='stylesheet' href='out.css'></head><body>\n");
     for my $page ( sort { $a->{num} <=> $b->{num} } @$pages ) {
         my $f = path( $page->{html_file} );
@@ -526,8 +528,6 @@ sub create_pdf {
         return;
     }
     my ($pages) = initial_setup();
-    my $pdf_page_size = find_biggest_page_size( $pages );
-    my ($pdf_w, $pdf_h) = split /x/, $pdf_page_size;
 
     @$pages = run_pages( sub {
         my ($page) = @_;
@@ -535,9 +535,13 @@ sub create_pdf {
         return $page
     }, $pages, 4/3 );
 
+    # XXX this code sucks
     my $bg_dir = $pages->[0]{bg_img};
     my $hocr_dir = $pages->[0]{hocr_file};
     s![^/]+$!! for $bg_dir, $hocr_dir;
+
+    my $pdf_page_size = find_biggest_page_size( $pages );
+    my ($pdf_w, $pdf_h) = split /x/, $pdf_page_size;
 
     runcmd $s->BASE . '/hocr2pdf', '',
             $pdf_w, $pdf_h, $INPUT_DPI,
