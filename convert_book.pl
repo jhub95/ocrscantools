@@ -1,17 +1,11 @@
 #!/usr/bin/perl
 # TODO
-# * PDF with HOCR output to merge rather than plain PDF output - hopefully fix that select text at beginning of PDF page issue
 # * ^C breaks partial PNG outputs sometimes - find out a way to kill off any .pngs that might have been underway or do it to tmp file and then move to proper?
-# * Bug with pdfunite so that sometimes first few words of page are not output to PDF text file
 # * Often it assumes font size is changing very quickly so confused by ', " or .....'s
 # * Triangling of pages due to large stack of paper behind them eg Anadolu Azizleri 250 - needs a better autocrop algorithm to accurately determine the page structure - perhaps say if 6 corners then cut the 2 furthest away?? A bit difficult to do.
 # 
 # * Should auto-detect images and not apply the level adjustment to those areas of the picture ?
-# 
-# * How to auto-detect white pages (and choose best one) ? Take auto cropped img & then check info: and then do a fuzzy crop thing to find the best? But this isn't particularly good as borders can be pretty dark at times.
-# 
 # * Can we auto-detect levels? Small blur (3px?) then histogram to see where the black/white parts are & run over all imgs?
-# 
 # * Because paper is old lots of specks on 679 - perhaps try to remove them somehow? May end up damaging the text but could try an erode on the output image?
 use threads;
 use utf8;
@@ -265,25 +259,8 @@ sub img_remove_background {
     return $removed_bg_img;
 }
 
-sub generate_blank_pdf {
-    my ($pdf_page_size, $out_pdf) = @_;
-
-    # image was totally blank, just output a blank PDF
-    runcmd 'convert',
-        # Create single white pixel on PDF page (actually can do without this but probably not with convert tool)
-        qw< ( -page >, $pdf_page_size, qw< xc:white ) >,
-
-        '+repage',
-
-        # dpi here is needed to get page sizing working in acrobat
-        qw< -units PixelsPerInch >,
-        '-density' => $INPUT_DPI,
-
-        $out_pdf;
-}
-
 sub generate_white_bordered_img {
-    my ($page, $cropped_masked_img, $pdf_page_size) = @_;
+    my ($page, $cropped_masked_img) = @_;
     my $white_bordered_img = $s->_tmp_page_file( 'white_bordered', $page );
     if( !-f $white_bordered_img ) {
         my ($w,$h,$offx,$offy) = find_image_extent( $cropped_masked_img );
@@ -303,24 +280,11 @@ sub generate_white_bordered_img {
         $h += $hadd*2;
 
         runcmd 'convert',
-            qw< ( -size >, $pdf_page_size, qw< xc:white ) >,   # Create white layer. XXX do this transparent?
+            $cropped_masked_img,
 
-            # Crop main content to white boundaries
-            qw< ( >,
-                $cropped_masked_img,
+            qw< -crop >, "${w}x${h}+$offx+$offy!",
 
-                qw< -crop >, "${w}x${h}+$offx+$offy!",
-
-                '-flatten', # expand if necessary (to get it centered)
-                qw< +repage
-            ) >,
-
-            # Set to center
-            qw< -gravity center +geometry >,
-
-            # Merge white and centered content together
-            qw< -composite >,
-
+            '-flatten', # expand if necessary (to get it centered)
             '+repage',
 
             $white_bordered_img;
@@ -332,10 +296,6 @@ sub generate_pdf_bg_img {
     my ($page, $input_img) = @_;
     my $pdf_bg_img = $s->_tmp_page_file( 'pdf_bg', $page, '.jpg' );
     if( !-f $pdf_bg_img ) {
-        # Set pic to grayscale (1/3, 1/3, 1/3) and subtract it from the
-        # original, then cut out some fuzz. If there are non-grayscale colors
-        # over larger areas there will be a maxima here which we can pick up
-        # on.
         my $is_grayscale = is_grayscale( $input_img );
 
         # Now output the image that's going to be visible to the user - loose
@@ -361,6 +321,7 @@ sub generate_pdf_bg_img {
 
             # leptonica ie tesseract needs these settings to detect DPI properly
             qw< -units PixelsPerInch >, -density => $PDF_DPI_OUTPUT,
+            '-flatten',
 
             $pdf_bg_img;
     }
@@ -378,7 +339,7 @@ sub generate_ocr_img {
         $ocr_img = $t if -f $t;
     }
     if( !-f $ocr_img ) {
-        my $tmpimg = $s->_tmpfile( 'ocr_cleanup', '.png' );
+        #my $tmpimg = $s->_tmpfile( 'ocr_cleanup', '.png' );
         runcmd 'convert', $input_img,
 
             # Stretch black and white in the image - this needs to be detected
@@ -386,15 +347,15 @@ sub generate_ocr_img {
             # makes a very good improvement
             '-level' => $conf->opt('level') || '50%,98%',
 
-            $tmpimg;
+            #$tmpimg;
 
         # XXX check that this algorithm actually improves quality over a wide range of sources
         #runcmd 'python', $FindBin::Bin . '/extract_text.py', $tmpimg, $tmpimg;
         #runcmd $FindBin::Bin . '/../DetectText/DetectText', $tmpimg, $tmpimg, 1;
 
         # XXX See what qw< -filter triangle -resize 300% > does - reported to work well (http://stb-tester.com/blog/2014/04/14/improving-ocr-accuracy.html)
-        runcmd 'convert',
-            $tmpimg,
+        #runcmd 'convert',
+            #$tmpimg,
 
             #convert page_output/004.png \( SWT_output.png -modulate 80% -blur 3 \) -compose Soft_Light -composite t.jpg also a possibility
 
@@ -406,6 +367,7 @@ sub generate_ocr_img {
 
             # leptonica ie tesseract needs these settings to detect DPI properly
             qw< -units PixelsPerInch >, -density => $INPUT_DPI,# * 3,
+            '-flatten',
 
             #'+repage',
             $ocr_img;
@@ -521,29 +483,24 @@ sub get_pdf_scale {
 sub generate_pdf_cover {
     my ($type, $pdf_page_size) = @_;
     my $input_img = "$type.jpg";
-    return () if !-f $input_img;
+    return '' if !-f $input_img;
 
-    my $pdf_cover_img = $s->output_file( 'pdf_covers', "$type.pdf" );
+    my $pdf_cover_img = $s->output_file( 'pdf_covers', "$type.jpg" );
     if( !-f $pdf_cover_img ) {
         my $quality = $conf->opt( 'pdf-color-quality' ) || 50;
         my $small_pdf_page_size = $pdf_page_size;
         $small_pdf_page_size =~ s/([\d.]+)/int( $1 * _get_pdf_scale() )/eg;
 
         runcmd 'convert',
-            qw< -gravity center +geometry >,
-
             $input_img,
             '-auto-orient',
             -resize => $small_pdf_page_size,
-
-            # Not sure why -extent is needed but it is for page centering...
-            -page => $small_pdf_page_size,
-            -extent => $small_pdf_page_size,
 
             -quality => $quality,
 
             qw< -units PixelsPerInch >, -density => $PDF_DPI_OUTPUT,
 
+            '-flatten',
             '+repage',
 
             $pdf_cover_img;
@@ -559,52 +516,52 @@ sub create_pdf {
     }
     my ($pages) = initial_setup();
     my $pdf_page_size = find_biggest_page_size( $pages );
+    my ($pdf_w, $pdf_h) = split /x/, $pdf_page_size;
 
     @$pages = run_pages( sub {
         my ($page) = @_;
-        process_page_pdf($page, $pdf_page_size);
+        process_page_pdf($page);
         return $page
     }, $pages, 4/3 );
 
-    my @pdf_pages = map { $_->{pdf_file} } @$pages;
+    my $bg_dir = $pages->[0]{bg_img};
+    my $hocr_dir = $pages->[0]{hocr_file};
+    s![^/]+$!! for $bg_dir, $hocr_dir;
 
-    runcmd 'pdfunite',
-            generate_pdf_cover('front', $pdf_page_size), @pdf_pages, generate_pdf_cover('back', $pdf_page_size)
-            => 'book.pdf';
+    runcmd $s->BASE . '/hocr2pdf', '',
+            $pdf_w, $pdf_h, $INPUT_DPI,
+            $bg_dir, $hocr_dir,
+            => 'book.pdf',
+            generate_pdf_cover('front', $pdf_page_size), generate_pdf_cover('back', $pdf_page_size)
 }
 
 sub process_page_pdf {
-    my ($page, $pdf_page_size) = @_;
-
-    my $out_pdf_noext = $s->output_page_file( 'pdf', $page, '' );
-    my $out_pdf = "$out_pdf_noext.pdf";
-    $page->{pdf_file} = $out_pdf;
-    return if -f $out_pdf;
+    my ($page) = @_;
 
     # Shortcut blank pages
-    if( $page->{is_blank} ) {
-        generate_blank_pdf( $pdf_page_size, $out_pdf);
-        return;
-    }
+    return if $page->{is_blank};
+
+    my $out_hocr_noext = $s->output_page_file( 'hocr', $page, '' );
+    $page->{hocr_file} = "$out_hocr_noext.hocr";
 
     my $cropped_masked_img = img_remove_background( $page );
-    my $white_bordered_img = generate_white_bordered_img( $page, $cropped_masked_img, $pdf_page_size );
+    my $white_bordered_img = generate_white_bordered_img( $page, $cropped_masked_img );
 
-    my $pdf_bg_img = generate_pdf_bg_img( $page, $white_bordered_img );
+    $page->{bg_img} = generate_pdf_bg_img( $page, $white_bordered_img );
+    return if -f $page->{hocr_file};
     my $ocr_img = generate_ocr_img( 'pdf', $page, $white_bordered_img );
 
-    # Convert to an OCR'd PDF
+    # Convert to a HOCR file
     runcmd
         'tesseract',
 
         # Use our provided image
-        -c => 'pdf_background_image=' . $pdf_bg_img,
-        -c => 'tessedit_create_pdf=1',
+        -c => 'tessedit_create_hocr=1',
 
         # Language spec
         -l => get_language(),
 
-        $ocr_img => $out_pdf_noext,
+        $ocr_img => $out_hocr_noext,
 
         $TESSERACT_CONF;
 }
@@ -757,6 +714,10 @@ sub find_image_extent {
 }
 
 # Return true if image is grayscale, false if colour.
+#
+# Algorithm: Set pic to grayscale (1/3, 1/3, 1/3) and subtract it from the
+# original, then cut out some fuzz. If there are non-grayscale colors over
+# larger areas there will be a maxima here which we can pick up on.
 sub is_grayscale {
     my ($img) = @_;
 

@@ -2,7 +2,7 @@ use strict;
 use warnings;
 use FindBin::libs qw(use export);
 use BookScan;
-use Test::More tests => 36;
+use Test::More tests => 37;
 
 my $BASE = "$lib[0]/../tests";
 my $TEST_DIR = "$BASE/detect_blank";
