@@ -9,7 +9,7 @@ DIR=$(dirname $0)
     for i in */; do
         echo "About to process $i..."
         cd $i
-        /home/bookscanner/scantools/convert_book.pl pdf text #clean
+        /home/bookscanner/scantools/convert_book.pl pdf text html #clean
         if [ $? != 0 ]; then
             echo "Command failed: $i"
         fi
