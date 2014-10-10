@@ -312,14 +312,12 @@ sub generate_white_bordered_img {
 }
 
 sub jpg_grayscale_opts {
-    my ($img) = @_;
+    my ($type, $img) = @_;
     my $is_grayscale = is_grayscale( $img );
 
-    # XXX grayscale with pictures requires a higher quality setting - this
-    # should actually be 'does this page have graphics on it' that we
-    # use.
-    my $quality = $is_grayscale ? ( $conf->opt( 'pdf-grayscale-quality' ) || 20 )
-                            : ( $conf->opt( 'pdf-color-quality' ) || 50 );
+    my $quality = $is_grayscale && $type eq 'text'
+                        ? ( $conf->opt( 'pdf-grayscale-quality' ) || 20 )
+                        : ( $conf->opt( 'pdf-color-quality' ) || 50 );
     return (
         -quality => $quality,
         ( $is_grayscale ? qw< -colorspace gray > : () ),
@@ -339,7 +337,10 @@ sub generate_pdf_bg_img {
             # Some minor enhancements to filter out noise on the PDF image
             '-level' => $conf->opt('output-level') || $conf->opt('level') || '50%,98%',
 
-            jpg_grayscale_opts( $input_img ),
+            # XXX grayscale with pictures requires a higher quality setting -
+            # this should actually be 'does this page have graphics on it' that
+            # we use.
+            jpg_grayscale_opts( 'text', $input_img ),
 
             -scale => get_pdf_scale(),
 
@@ -513,7 +514,7 @@ sub create_html {
         runcmd 'convert',
             $f,
 
-            jpg_grayscale_opts( $f ),
+            jpg_grayscale_opts( 'image', $f ),
 
             -scale => get_pdf_scale(),  # XXX could adjust this if we want
 
