@@ -451,7 +451,6 @@ sub create_html {
     my $html_dir = 'bookhtml';
     my $img_dir = 'html_imgs';
 
-    mkdir $img_dir;
     my $html_file = $s->output_file($html_dir, 'index.html');
     if( -f $html_file && ! -z $html_file ) {
         warn "$html_file already exists - not doing anything\n";
@@ -460,6 +459,10 @@ sub create_html {
     # TODO Actually this initial setup can be done on a page-by-page basis in
     # text mode as we dont need to know the overall max page dimensions.
     my ($pages) = initial_setup();
+
+    _clean($html_dir, $img_dir);
+    mkdir $img_dir;
+    $html_file = $s->output_file($html_dir, 'index.html');
 
     @$pages = run_pages( sub {
         my ($page) = @_;
@@ -486,7 +489,7 @@ sub create_html {
         return $page;
     }, $pages, 4/3 );
 
-    # Combine and output text
+    # Combine and output html, resize and compress associated images
     my $fh = path($html_file)->openw_utf8;
 
     my $css_file = 'html.css';
@@ -784,7 +787,7 @@ sub is_grayscale {
 sub clean {
     my ($extra) = @_;
     my @tmp = glob 'tmp-*';
-    push @tmp, $DUMP_FILE, qw< pdf html text pdf_covers > if $extra;
+    push @tmp, $DUMP_FILE, qw< pdf html_imgs html text pdf_covers > if $extra;
 
     eval { _clean(@tmp) };
     if( $@ ) {
