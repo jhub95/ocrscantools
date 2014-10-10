@@ -468,10 +468,10 @@ sub create_html {
     # text mode as we dont need to know the overall max page dimensions.
     my ($pages) = initial_setup();
 
-    _clean($html_dir, $img_dir);
-    mkdir $img_dir;
+    _clean($html_dir);
     $html_file = $s->output_file($html_dir, 'index.html');
 
+    mkdir $img_dir;
     @$pages = run_pages( sub {
         my ($page) = @_;
 
@@ -497,6 +497,25 @@ sub create_html {
         return $page;
     }, $pages, 4/3 );
 
+    # Convert the pngs to jpgs and reduce res for size reasons
+    if( my @imgs = glob "$img_dir/*.png" ) {
+        my $img_out_dir = "$html_dir/$img_dir/";
+        mkdir $img_out_dir;
+        run_array(sub {
+            my ($f) = @_;
+            my ($fn) = $f =~ m!([^/]+)\.png$!;
+
+            runcmd 'convert',
+                $f,
+
+                jpg_grayscale_opts( 'image', $f ),
+
+                -scale => get_pdf_scale(),  # XXX could adjust this if we want
+
+                "$img_out_dir/$fn.jpg"
+        }, \@imgs)
+    }
+
     # Combine and output html, resize and compress associated images
     my $fh = path($html_file)->openw_utf8;
 
@@ -504,23 +523,6 @@ sub create_html {
     path($s->BASE . '/html.css')->copy( $s->output_file($html_dir, $css_file) );
 
     $fh->print("<!DOCTYPE html>\n<html><head><meta charset='utf-8' /><link rel='stylesheet' href='$css_file'></head><body>\n");
-    # Convert the pngs to jpgs and reduce res for size reasons
-    my $img_out_dir = "$html_dir/$img_dir/";
-    mkdir $img_out_dir;
-    run_array(sub {
-        my ($f) = @_;
-        my ($fn) = $f =~ m!([^/]+)\.png$!;
-
-        runcmd 'convert',
-            $f,
-
-            jpg_grayscale_opts( 'image', $f ),
-
-            -scale => get_pdf_scale(),  # XXX could adjust this if we want
-
-            "$img_out_dir/$fn.jpg"
-    }, [ glob "$img_dir/*.png" ]);
-
     for my $page ( sort { $a->{num} <=> $b->{num} } @$pages ) {
         my $f = path( $page->{html_file} );
 
@@ -662,7 +664,8 @@ sub run_array {
 
     run_multi( sub {
         my ($item) = @_;
-        my $ret = $sub->( { %$item } );
+        $item = { %$item } if ref $item eq 'HASH';
+        my $ret = $sub->( $item );
         $return_q->enqueue( $ret ) if $ret;
     }, sub {
         my ($q) = @_;
