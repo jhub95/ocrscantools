@@ -304,30 +304,35 @@ sub generate_white_bordered_img {
     return $white_bordered_img;
 }
 
+sub jpg_grayscale_opts {
+    my ($img) = @_;
+    my $is_grayscale = is_grayscale( $img );
+
+    # XXX grayscale with pictures requires a higher quality setting - this
+    # should actually be 'does this page have graphics on it' that we
+    # use.
+    my $quality = $is_grayscale ? ( $conf->opt( 'pdf-grayscale-quality' ) || 20 )
+                            : ( $conf->opt( 'pdf-color-quality' ) || 50 );
+    return (
+        -quality => $quality,
+        ( $is_grayscale ? qw< -colorspace gray > : () ),
+    );
+}
+
 sub generate_pdf_bg_img {
     my ($page, $input_img) = @_;
     my $pdf_bg_img = $s->_tmp_page_file( 'pdf_bg', $page, '.jpg' );
     if( !-f $pdf_bg_img ) {
-        my $is_grayscale = is_grayscale( $input_img );
-
         # Now output the image that's going to be visible to the user - loose
         # some resolution but keep the dimensions the same
-
-        # XXX grayscale with pictures requires a higher quality setting - this
-        # should actually be 'does this page have graphics on it' that we
-        # use.
-        my $quality = $is_grayscale ? ( $conf->opt( 'pdf-grayscale-quality' ) || 20 )
-                                : ( $conf->opt( 'pdf-color-quality' ) || 50 );
-
         runcmd 'convert', $input_img,
-            -quality => $quality,
 
             qw< -background white >,
 
             # Some minor enhancements to filter out noise on the PDF image
             '-level' => $conf->opt('output-level') || $conf->opt('level') || '50%,98%',
 
-            ( $is_grayscale ? qw< -colorspace gray > : () ),
+            jpg_grayscale_opts( $input_img ),
 
             -scale => get_pdf_scale(),
 
@@ -424,20 +429,31 @@ sub create_text {
     my $fh = path('book.txt')->openw_utf8;
     for my $page ( sort { $a->{num} <=> $b->{num} } @$pages ) {
         my $f = path( $page->{txt_file} );
-        my $text = $f->slurp_utf8;
 
         # Apply fixups to tesseract output and write back to file
-        $text =~ tr/`“”\x{2018}\x{2019}’/'""'''/;
-        $text =~ s/\x{fb01}/fi/g;
+        my $text = text_fixup( $f->slurp_utf8 );
         $f->spew_utf8( $text );
 
         $fh->print( "---- page $page->{num} ----\n", $text, "\n" );
     }
 }
 
+# Tesseract can produce some weird chars (because we have to allow it to detect
+# them like that) - try to convert them back to sensible ones.
+sub text_fixup {
+    my ($text) = @_;
+    $text =~ tr/`“”\x{2018}\x{2019}’/'""'''/;
+    $text =~ s/\x{fb01}/fi/g;
+    return $text;
+}
+
 sub create_html {
-    my $html_file = 'book.html';
-    if( -f $html_file ) {
+    my $html_dir = 'bookhtml';
+    my $img_dir = 'html_imgs';
+
+    mkdir $img_dir;
+    my $html_file = $s->output_file($html_dir, 'index.html');
+    if( -f $html_file && ! -z $html_file ) {
         warn "$html_file already exists - not doing anything\n";
         return;
     }
@@ -458,12 +474,11 @@ sub create_html {
         my $ocr_img = generate_ocr_img( 'text', $page, $cropped_masked_img );
 
         $page->{html_file} = $s->output_page_file( 'html', $page, '.html');
-        mkdir "html/imgs";
         if( !-f $page->{html_file} ) {
             runcmd
                 $s->BASE . '/htmlout',
                 get_language(),
-                "html/imgs/img_$page->{num}_",
+                "$img_dir/img_$page->{num}_",
                 $ocr_img => $page->{html_file},
                 $TESSERACT_CONF;
         }
@@ -473,15 +488,37 @@ sub create_html {
 
     # Combine and output text
     my $fh = path($html_file)->openw_utf8;
-    $fh->print("<!DOCTYPE html>\n<html><head><meta charset='utf-8' /><link rel='stylesheet' href='out.css'></head><body>\n");
+
+    my $css_file = 'html.css';
+    path($s->BASE . '/html.css')->copy( $s->output_file($html_dir, $css_file) );
+
+    $fh->print("<!DOCTYPE html>\n<html><head><meta charset='utf-8' /><link rel='stylesheet' href='$css_file'></head><body>\n");
+    # Convert the pngs to jpgs and reduce res for size reasons
+    my $img_out_dir = "$html_dir/$img_dir/";
+    mkdir $img_out_dir;
+    for my $f (glob "$img_dir/*.png") {
+        my ($fn) = $f =~ m!([^/]+)\.png$!;
+
+        runcmd 'convert',
+            $f,
+
+            jpg_grayscale_opts( $f ),
+
+            -scale => get_pdf_scale(),  # XXX could adjust this if we want
+
+            "$img_out_dir/$fn.jpg"
+    }
+
     for my $page ( sort { $a->{num} <=> $b->{num} } @$pages ) {
         my $f = path( $page->{html_file} );
-        my $text = $f->slurp_utf8;
 
         # Apply fixups to tesseract output and write back to file
-        $text =~ tr/`“”\x{2018}\x{2019}/'""''/;
-        $f->spew_utf8( $text );
-        $fh->print( $text );
+        my $html = text_fixup( $f->slurp_utf8 );
+        $f->spew_utf8( $html );
+
+        $html =~ s/(<img [^>]+ [^'"=]+ ) \.png/$1.jpg/xg;
+
+        $fh->print( $html );
     }
     $fh->print("</body></html>\n");
 }

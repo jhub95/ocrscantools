@@ -1,0 +1,6 @@
+.bold { font-weight: bold }
+.italic { font-style: italic }
+.underlined { text-decoration: underline }
+.conf-med { color: green }
+.conf-low { color: orange }
+.conf-none { color: red }
