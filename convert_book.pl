@@ -506,7 +506,8 @@ sub create_html {
     # Convert the pngs to jpgs and reduce res for size reasons
     my $img_out_dir = "$html_dir/$img_dir/";
     mkdir $img_out_dir;
-    for my $f (glob "$img_dir/*.png") {
+    run_array(sub {
+        my ($f) = @_;
         my ($fn) = $f =~ m!([^/]+)\.png$!;
 
         runcmd 'convert',
@@ -517,7 +518,7 @@ sub create_html {
             -scale => get_pdf_scale(),  # XXX could adjust this if we want
 
             "$img_out_dir/$fn.jpg"
-    }
+    }, [ glob "$img_dir/*.png" ]);
 
     for my $page ( sort { $a->{num} <=> $b->{num} } @$pages ) {
         my $f = path( $page->{html_file} );
