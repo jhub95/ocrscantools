@@ -451,6 +451,7 @@ sub create_html {
         return if $page->{is_blank};
 
         my $cropped_masked_img = img_remove_background( $page );
+
         # Because we skip a few stages here (not doing white masks etc) the PDF
         # version cannot use our generated OCR images here but we can use the
         # version that was created for the PDF

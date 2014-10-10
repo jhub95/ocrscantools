@@ -80,6 +80,8 @@ def export_pdf(outfile, title, img_dir, hocr_dir, pdf_width, pdf_height, pdf_dpi
         if hocr_file and os.path.exists(hocr_file):
           add_text_layer(pdf, hocr_file, img_pdf_height, img_h, img_dpi, x_off, y_off)
 
+        pdf.showPage()
+
     if len(front) and os.path.exists(front):
         add_image(front)
 
@@ -98,8 +100,6 @@ def export_pdf(outfile, title, img_dir, hocr_dir, pdf_width, pdf_height, pdf_dpi
         hocr_file = hocr_dir + os.path.splitext(hocr_file)[0] + '.hocr'
 
         add_image(image, hocr_file)
-
-        pdf.showPage()
 
     if len(back) and os.path.exists(back):
         add_image(back)
