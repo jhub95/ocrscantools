@@ -142,7 +142,10 @@ sub find_mask_pages {
         return $s->is_blank( $page->{cropped_distorted} ) ? $page : 0;
     }, $pages);
 
-    # Mark the pages as blank to save processing later
+    # Mark the pages as blank to save processing later. %blank_nums is all
+    # blank pages, %blanks is the ones we want to use for masking in
+    # particular.
+    my %blank_nums = map { $_->{num} => 1 } @mask_pages;
     my %blanks;
     $blanks{$_->{page_type}}{$_->{num}} = $_ for @mask_pages;
 
@@ -154,6 +157,7 @@ sub find_mask_pages {
 
             # Override detected blanks
             $blanks{$type} = { $p->{num} => $p };
+            $blank_nums{$p->{num}} = 1;
         }
 
         if( !values %{$blanks{$type}} ) {
@@ -182,7 +186,6 @@ sub find_mask_pages {
     for my $page (@$pages) {
         my @opts;
         while( my ($num, $m) = each %{$blanks{$page->{page_type}}} ) {
-            $page->{is_blank} = 1 if $num == $page->{num};
             push @opts, {
                 score => abs( $num - $page->{num} ),
                 mask => $m
@@ -190,6 +193,10 @@ sub find_mask_pages {
         }
         my $best = (sort { $a->{score} <=> $b->{score} } @opts)[0];
         $page->{mask} = $best->{mask}{mask_file};
+    }
+
+    for my $page (@$pages) {
+        $page->{is_blank} = 1 if $blank_nums{$page->{num}};
     }
 
     return $pages;
