@@ -284,8 +284,13 @@ sub generate_white_bordered_img {
     if( !-f $white_bordered_img ) {
         my ($w,$h,$offx,$offy) = find_image_extent( $cropped_masked_img );
         if( $w < 5 && $h < 5 ) {
-            # XXX actually was blank
-            die "Page was blank"
+            # Actually page was blank - we want this algorithm to be a bit more
+            # happy to cut stuff than the initial blank pages detection
+            # algorithm so just mark this page as blank and move on. (borders
+            # in particular may have lots of issues so be more happy about
+            # cutting them down)
+            $page->{is_blank} = 1;
+            return;
         }
 
         # Expand a bit to avoid cropping key side stuff (but if
@@ -609,14 +614,16 @@ sub process_page_pdf {
     # Shortcut blank pages
     return if $page->{is_blank};
 
-    my $out_hocr_noext = $s->output_page_file( 'hocr', $page, '' );
-    $page->{hocr_file} = "$out_hocr_noext.hocr";
-
     my $cropped_masked_img = img_remove_background( $page );
     my $white_bordered_img = generate_white_bordered_img( $page, $cropped_masked_img );
+    return if $page->{is_blank};
 
     $page->{bg_img} = generate_pdf_bg_img( $page, $white_bordered_img );
+
+    my $out_hocr_noext = $s->output_page_file( 'hocr', $page, '' );
+    $page->{hocr_file} = "$out_hocr_noext.hocr";
     return if -f $page->{hocr_file};
+
     my $ocr_img = generate_ocr_img( 'pdf', $page, $white_bordered_img );
 
     # Convert to a HOCR file
