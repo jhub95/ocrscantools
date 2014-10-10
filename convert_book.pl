@@ -536,8 +536,9 @@ sub create_pdf {
     }, $pages, 4/3 );
 
     # XXX this code sucks
-    my $bg_dir = $pages->[0]{bg_img};
-    my $hocr_dir = $pages->[0]{hocr_file};
+    my $first_decent_page = first { $_->{bg_img} } @$pages;
+    my $bg_dir = $first_decent_page->{bg_img};
+    my $hocr_dir = $first_decent_page->{hocr_file};
     s![^/]+$!! for $bg_dir, $hocr_dir;
 
     my $pdf_page_size = find_biggest_page_size( $pages );
