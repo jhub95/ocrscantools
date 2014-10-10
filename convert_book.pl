@@ -155,6 +155,10 @@ sub find_mask_pages {
         if( my $name = $conf->opt( $type . '_blank_page' ) ) {
             my $p = first { $_->{file} eq input_path() . "/$name" } grep { $_->{page_type} eq $type } @$pages;
 
+            if( !$p ) {
+                die "custom $type mask page specified but file $name could not be found"
+            }
+
             # Override detected blanks
             $blanks{$type} = { $p->{num} => $p };
             $blank_nums{$p->{num}} = 1;
