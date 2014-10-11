@@ -7,6 +7,12 @@
 # * Should auto-detect images and not apply the level adjustment to those areas of the picture ?
 # * Can we auto-detect levels? Small blur (3px?) then histogram to see where the black/white parts are & run over all imgs?
 # * Because paper is old lots of specks on 679 - perhaps try to remove them somehow? May end up damaging the text but could try an erode on the output image?
+#
+# * Struggles with titles in capital letters - perhaps explicitly add ucfirst and full caps to the wordlist & training data?
+#
+# HTML output:
+# * How to get better image cut-outs?
+# * How to figure out top and bottom of page to cut page numbers, headings etc automatically?
 use threads;
 use utf8;
 use strict;
@@ -278,6 +284,8 @@ sub img_remove_background {
     return $removed_bg_img;
 }
 
+# This now doesn't generate a white bordered image but it just cuts off any
+# borders of the image itself. Dies if the image is blank.
 sub generate_white_bordered_img {
     my ($page, $cropped_masked_img) = @_;
     my $white_bordered_img = $s->_tmp_page_file( 'white_bordered', $page );
