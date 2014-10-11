@@ -1,5 +1,17 @@
-// Compile with
-// g++ -std=c++0x -O3 htmlout.cpp -ltesseract -llept -o htmlout
+/*
+ html output from tesseract cutting out anything that looks like an image and
+ outputting html for the rest.
+
+ Compile with
+ g++ -std=c++0x -O3 htmlout.cpp -ltesseract -llept -o htmlout
+
+ TODO:
+ * Tesseract seems to have major issues with images that contain text - perhaps
+   use opencv to do the region detection and then pass through to tesseract?
+
+ Mark Zealey, 2014
+*/
+
 #include <string>
 #include <list>
 #include <iostream>
@@ -138,6 +150,7 @@ string process_file( char *img_base, char *img ) {
     */
 
     for( int i = 0; i < boxaGetCount(boxes); i++ ) {
+        //cerr << i << endl;
         int x, y, w, h;
         boxaGetBoxGeometry(boxes, i, &x, &y, &w, &h);
         api->SetRectangle(x, y, w, h);
@@ -149,7 +162,16 @@ string process_file( char *img_base, char *img ) {
 
         ResultIterator *res_it = api->GetIterator();
         while (!res_it->Empty(RIL_BLOCK)) {
-          if (res_it->Empty(RIL_WORD)) {
+          const char *text = res_it->GetUTF8Text(RIL_WORD);
+
+          /* Weird bug in tesseract whereby the test for ->Empty(RIL_WORD) at
+             the top doesnt hit, but there is no utf8 text returned. In this
+             case we can't trust WordFontAttributes unfortunately they return
+             uninitialized values (see
+             https://code.google.com/p/tesseract-ocr/issues/detail?id=1334 )
+           */
+          if (res_it->Empty(RIL_WORD) || strlen(text) == 0 ) {
+            res_it->Next(RIL_WORD);
             //cerr << "Empty block" << endl;
             continue;
           }
@@ -168,7 +190,8 @@ string process_file( char *img_base, char *img ) {
 
           // Average the font size of the paragraph out as tesseract doesnt usually
           // have it very accurately for each word.
-          //cerr << font_name << " " << pointsize << "pt" << endl;
+          //cerr << pointsize << "pt " << strlen(text) << endl;
+          // XXX sometimes font_name is rubbish
           wcnt++;
           word_font_size += pointsize;
 
