@@ -292,8 +292,13 @@ sub generate_white_bordered_img {
     if( !-f $white_bordered_img ) {
         my ($w,$h,$offx,$offy) = find_image_extent( $cropped_masked_img );
         if( $w < 5 && $h < 5 ) {
-            # XXX actually was blank
-            die "Page was blank"
+            # Actually page was blank - we want this algorithm to be a bit more
+            # happy to cut stuff than the initial blank pages detection
+            # algorithm so just mark this page as blank and move on. (borders
+            # in particular may have lots of issues so be more happy about
+            # cutting them down)
+            $page->{is_blank} = 1;
+            return;
         }
 
         # Expand a bit to avoid cropping key side stuff (but if
@@ -476,10 +481,10 @@ sub create_html {
     # text mode as we dont need to know the overall max page dimensions.
     my ($pages) = initial_setup();
 
-    _clean($html_dir, $img_dir);
-    mkdir $img_dir;
+    _clean($html_dir);
     $html_file = $s->output_file($html_dir, 'index.html');
 
+    mkdir $img_dir;
     @$pages = run_pages( sub {
         my ($page) = @_;
 
@@ -505,6 +510,25 @@ sub create_html {
         return $page;
     }, $pages, 4/3 );
 
+    # Convert the pngs to jpgs and reduce res for size reasons
+    if( my @imgs = glob "$img_dir/*.png" ) {
+        my $img_out_dir = "$html_dir/$img_dir/";
+        mkdir $img_out_dir;
+        run_array(sub {
+            my ($f) = @_;
+            my ($fn) = $f =~ m!([^/]+)\.png$!;
+
+            runcmd 'convert',
+                $f,
+
+                jpg_grayscale_opts( 'image', $f ),
+
+                -scale => get_pdf_scale(),  # XXX could adjust this if we want
+
+                "$img_out_dir/$fn.jpg"
+        }, \@imgs)
+    }
+
     # Combine and output html, resize and compress associated images
     my $fh = path($html_file)->openw_utf8;
 
@@ -512,23 +536,6 @@ sub create_html {
     path($s->BASE . '/html.css')->copy( $s->output_file($html_dir, $css_file) );
 
     $fh->print("<!DOCTYPE html>\n<html><head><meta charset='utf-8' /><link rel='stylesheet' href='$css_file'></head><body>\n");
-    # Convert the pngs to jpgs and reduce res for size reasons
-    my $img_out_dir = "$html_dir/$img_dir/";
-    mkdir $img_out_dir;
-    run_array(sub {
-        my ($f) = @_;
-        my ($fn) = $f =~ m!([^/]+)\.png$!;
-
-        runcmd 'convert',
-            $f,
-
-            jpg_grayscale_opts( 'image', $f ),
-
-            -scale => get_pdf_scale(),  # XXX could adjust this if we want
-
-            "$img_out_dir/$fn.jpg"
-    }, [ glob "$img_dir/*.png" ]);
-
     for my $page ( sort { $a->{num} <=> $b->{num} } @$pages ) {
         my $f = path( $page->{html_file} );
 
@@ -615,14 +622,16 @@ sub process_page_pdf {
     # Shortcut blank pages
     return if $page->{is_blank};
 
-    my $out_hocr_noext = $s->output_page_file( 'hocr', $page, '' );
-    $page->{hocr_file} = "$out_hocr_noext.hocr";
-
     my $cropped_masked_img = img_remove_background( $page );
     my $white_bordered_img = generate_white_bordered_img( $page, $cropped_masked_img );
+    return if $page->{is_blank};
 
     $page->{bg_img} = generate_pdf_bg_img( $page, $white_bordered_img );
+
+    my $out_hocr_noext = $s->output_page_file( 'hocr', $page, '' );
+    $page->{hocr_file} = "$out_hocr_noext.hocr";
     return if -f $page->{hocr_file};
+
     my $ocr_img = generate_ocr_img( 'pdf', $page, $white_bordered_img );
 
     # Convert to a HOCR file
@@ -670,7 +679,8 @@ sub run_array {
 
     run_multi( sub {
         my ($item) = @_;
-        my $ret = $sub->( { %$item } );
+        $item = { %$item } if ref $item eq 'HASH';
+        my $ret = $sub->( $item );
         $return_q->enqueue( $ret ) if $ret;
     }, sub {
         my ($q) = @_;
