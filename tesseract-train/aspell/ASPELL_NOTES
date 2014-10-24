@@ -1,0 +1,6 @@
+# This aspell create function seems to create different dicts depending on whether it's 32- or 64- bit box.
+
+egrep -v '[‘’`]' hasat_tur/wordlist | aspell --encoding=utf-8  --lang=tr create master ./tr.rws
+# Will warn about 's at end of word, numbers, _s etc
+
+rsync -Pzav tr* hasat-dev:/var/www/include/js/tinymce/plugins/spellchecker/dicts/
