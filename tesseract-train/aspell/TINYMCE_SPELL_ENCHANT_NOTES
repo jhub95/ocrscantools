@@ -1,0 +1,7 @@
+apt-get source libenchant-dev
+edit debian/rules - change --disable-zemberek to --enable-zemberek
+
+dch -n
+dpkg-buildpackage -us -uc
+
+and install ../*.deb

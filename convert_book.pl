@@ -1,5 +1,12 @@
 #!/usr/bin/perl
 # TODO
+#
+# HTML output:
+# * Output straight to JPG? Also do the html text_fixup + img link changes on each file at output?
+# * Go through files and try to determine based on font size what sort of paragraph each thing is
+# * How to get better image cut-outs?
+# * How to figure out top and bottom of page to cut page numbers, headings etc automatically?
+#
 # * ^C breaks partial PNG outputs sometimes - find out a way to kill off any .pngs that might have been underway or do it to tmp file and then move to proper?
 # * Often it assumes font size is changing very quickly so confused by ', " or .....'s
 # * Triangling of pages due to large stack of paper behind them eg Anadolu Azizleri 250 - needs a better autocrop algorithm to accurately determine the page structure - perhaps say if 6 corners then cut the 2 furthest away?? A bit difficult to do.
@@ -9,10 +16,8 @@
 # * Because paper is old lots of specks on 679 - perhaps try to remove them somehow? May end up damaging the text but could try an erode on the output image?
 #
 # * Struggles with titles in capital letters - perhaps explicitly add ucfirst and full caps to the wordlist & training data?
+# * Lines of dots are not really done very well
 #
-# HTML output:
-# * How to get better image cut-outs?
-# * How to figure out top and bottom of page to cut page numbers, headings etc automatically?
 use threads;
 use utf8;
 use strict;
@@ -452,39 +457,24 @@ sub create_text {
         my $f = path( $page->{txt_file} );
 
         # Apply fixups to tesseract output and write back to file
-        my $text = text_fixup( $f->slurp_utf8 );
+        my $text = $s->text_fixup( $f->slurp_utf8 );
         $f->spew_utf8( $text );
 
         $fh->print( "---- page $page->{num} ----\n", $text, "\n" );
     }
 }
 
-# Tesseract can produce some weird chars (because we have to allow it to detect
-# them like that) - try to convert them back to sensible ones.
-sub text_fixup {
-    my ($text) = @_;
-    $text =~ tr/`“”\x{2018}\x{2019}’/'""'''/;
-    $text =~ s/\x{fb01}/fi/g;
-    return $text;
-}
-
 sub create_html {
-    my $html_dir = 'bookhtml';
+    my $out_dir = 'html';
+    my $html_dir = $out_dir;
     my $img_dir = 'html_imgs';
 
-    my $html_file = $s->output_file($html_dir, 'index.html');
-    if( -f $html_file && ! -z $html_file ) {
-        warn "$html_file already exists - not doing anything\n";
-        return;
-    }
     # TODO Actually this initial setup can be done on a page-by-page basis in
     # text mode as we dont need to know the overall max page dimensions.
     my ($pages) = initial_setup();
 
-    _clean($html_dir);
-    $html_file = $s->output_file($html_dir, 'index.html');
-
     mkdir $img_dir;
+
     @$pages = run_pages( sub {
         my ($page) = @_;
 
@@ -497,7 +487,7 @@ sub create_html {
         # version that was created for the PDF
         my $ocr_img = generate_ocr_img( 'text', $page, $cropped_masked_img );
 
-        $page->{html_file} = $s->output_page_file( 'html', $page, '.html');
+        $page->{html_file} = $s->output_page_file( $out_dir, $page, '.html');
         if( !-f $page->{html_file} ) {
             runcmd
                 $s->BASE . '/htmlout',
@@ -505,6 +495,11 @@ sub create_html {
                 "$img_dir/img_$page->{num}_",
                 $ocr_img => $page->{html_file},
                 $TESSERACT_CONF;
+
+            my $f = path( $page->{html_file} );
+
+            # Apply fixups to tesseract output and write back to file
+            $f->spew_utf8( $s->html_fixup( $f->slurp_utf8 ) );
         }
 
         return $page;
@@ -514,40 +509,47 @@ sub create_html {
     if( my @imgs = glob "$img_dir/*.png" ) {
         my $img_out_dir = "$html_dir/$img_dir/";
         mkdir $img_out_dir;
-        run_array(sub {
-            my ($f) = @_;
-            my ($fn) = $f =~ m!([^/]+)\.png$!;
 
-            runcmd 'convert',
-                $f,
+        # Only convert images that dont have jpgs yet
+        my @todo;
+        for my $in_img (@imgs) {
+            my ($base) = $in_img =~ m!([^/]+)\.png$!;
+            my $out_img = "$img_out_dir/$base.jpg";
+            next if -f $out_img;
+            push @todo, {
+                in => $in_img,
+                out => $out_img
+            };
+        }
 
-                jpg_grayscale_opts( 'image', $f ),
+        if( @todo ) {
+            run_array(sub {
+                my ($d) = @_;
 
-                -scale => get_pdf_scale(),  # XXX could adjust this if we want
+                runcmd 'convert',
+                    $d->{in},
 
-                "$img_out_dir/$fn.jpg"
-        }, \@imgs)
+                    jpg_grayscale_opts( 'image', $d->{in} ),
+
+                    -scale => get_pdf_scale(),  # XXX could adjust this if we want
+
+                    $d->{out}
+            }, \@todo);
+        }
     }
 
     # Combine and output html, resize and compress associated images
-    my $fh = path($html_file)->openw_utf8;
 
     my $css_file = 'html.css';
     path($s->BASE . '/html.css')->copy( $s->output_file($html_dir, $css_file) );
 
-    $fh->print("<!DOCTYPE html>\n<html><head><meta charset='utf-8' /><link rel='stylesheet' href='$css_file'></head><body>\n");
-    for my $page ( sort { $a->{num} <=> $b->{num} } @$pages ) {
-        my $f = path( $page->{html_file} );
-
-        # Apply fixups to tesseract output and write back to file
-        my $html = text_fixup( $f->slurp_utf8 );
-        $f->spew_utf8( $html );
-
-        $html =~ s/(<img [^>]+ [^'"=]+ ) \.png/$1.jpg/xg;
-
-        $fh->print( $html );
-    }
-    $fh->print("</body></html>\n");
+#    my $fh = path($html_file)->openw_utf8;
+#    $fh->print("<!DOCTYPE html>\n<html><head><meta charset='utf-8' /><link rel='stylesheet' href='$css_file'></head><body>\n");
+#    for my $page ( sort { $a->{num} <=> $b->{num} } @$pages ) {
+#        my $f = path( $page->{html_file} )->slurp_utf8;
+#        $fh->print( $html );
+#    }
+#    $fh->print("</body></html>\n");
 }
 
 sub _get_pdf_scale { return $PDF_DPI_OUTPUT / $INPUT_DPI }
@@ -840,3 +842,4 @@ sub get_language {
     my $lang = $conf->opt( 'language' ) || $DEFAULT_LANG;
     return $LANGS{$lang} or die "Language $lang not allowed yet - add to config"
 }
+

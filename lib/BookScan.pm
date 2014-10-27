@@ -216,4 +216,24 @@ sub is_blank {
     return 0;
 }
 
+# Tesseract can produce some weird chars (because we have to allow it to detect
+# them like that) - try to convert them back to sensible ones.
+sub text_fixup {
+    my ($self, $text) = @_;
+    $text =~ tr/`“”\x{2018}\x{2019}’/'""'''/;
+    $text =~ s/\x{fb01}/fi/g;
+    return $text;
+}
+
+sub html_fixup {
+    my ($self, $html) = @_;
+
+    $html = $self->text_fixup( $html );
+
+    $html =~ s/(<img [^>]+ [^'"=]+ ) \.png/$1.jpg/xg;
+
+    # XXX Try to detect paragraph types based on font sizes etc
+    return $html;
+}
+
 1
