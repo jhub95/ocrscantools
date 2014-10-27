@@ -5,3 +5,4 @@ dch -n
 dpkg-buildpackage -us -uc
 
 and install ../*.deb
+sudo apt-mark hold enchant libenchant-dev
