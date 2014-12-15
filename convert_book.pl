@@ -28,6 +28,7 @@ use Data::Dumper;
 use Thread::Queue;
 use Sys::CpuAffinity;
 use File::Temp ();
+use File::Glob ':bsd_glob';
 use FindBin::libs;
 use lib '/home/bookscanner/scantools/lib';
 use BookScan;
@@ -711,7 +712,7 @@ sub load_pages {
     }
 
     my @pages;
-    for( glob "$path/*.jpg") {
+    for( bsd_glob("$path/*.jpg", GLOB_NOCASE) ) {
         next unless m!(?: /|^ ) (0*(\d+))\.jpg$!xi;
         push @pages, {
             num => $2,
