@@ -1,5 +1,5 @@
 # ocrscantools
-Take jpgs, crop and adjust them, and then pass them through Tessaract.
+Take jpgs, crop and adjust them, and then pass them through Tesseract. https://github.com/tesseract-ocr/tesseract
 
 # Installation
 
