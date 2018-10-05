@@ -5,9 +5,13 @@ Take jpgs, crop and adjust them, and then pass them through Tessaract.
 
 ## == Installing patched version of tesseract ==
 apt-get source tesseract
+
 get pdf_background_image.patch
+
 cd tesseract-dir
+
 patch -p0 < ../pdf_background_image.patch
+
 dpkg-buildpackage
 
 ## installing the new word database:
