@@ -8,14 +8,3 @@ perhaps with the -s option to ignore spaces
 pdftotext -layout /home/mark/documents/Work\ Abroad/Turkey/Books/Jerry_Mattix/Allah_Sevgidir/orig/Allah\ Sevgidir-son.pdf - | perl ../../script/splitter.pl
 # Number of differences (a difference could be quite large)
 for i in pdfout/*; do wdiff  --no-common $i text-fewpages/${i#pdfout}; done |grep -c '====='
-
-
-
-== Installing patched version of tesseract ==
-
-apt-get source tesseract
-get pdf_background_image.patch
-cd tesseract-dir
-patch -p0 < ../pdf_background_image.patch
-dpkg-buildpackage
-
