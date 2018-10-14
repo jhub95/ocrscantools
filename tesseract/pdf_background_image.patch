@@ -1,0 +1,51 @@
+Index: api/pdfrenderer.cpp
+===================================================================
+--- api/pdfrenderer.cpp	(revision 1149)
++++ api/pdfrenderer.cpp	(working copy)
+@@ -540,11 +540,16 @@
+ 
+ bool TessPDFRenderer::AddImageHandler(TessBaseAPI* api) {
+   char buf[kBasicBufSize];
+-  Pix *pix = api->GetInputImage();
+-  char *filename = (char *)api->GetInputName();
+-  int ppi = api->GetSourceYResolution();
+-  if (!pix || ppi <= 0)
++  // XXX change these to be the same image that is referenced from elsewhere...
++  char *filename = (char *)api->GetStringVariable("pdf_background_image");
++  if( !filename || strlen(filename) == 0 )
++    filename = (char *)api->GetInputName();
++  Pix *pix = pixRead(filename);
++  int ppi = pixGetYRes(pix);    // XXX assumes source res is same as this picture res
++  if (!pix || ppi <= 0) {
++    pixDestroy(&pix);
+     return false;
++  }
+   double width = pixGetWidth(pix) * 72.0 / ppi;
+   double height = pixGetHeight(pix) * 72.0 / ppi;
+ 
+Index: ccmain/tesseractclass.cpp
+===================================================================
+--- ccmain/tesseractclass.cpp	(revision 1149)
++++ ccmain/tesseractclass.cpp	(working copy)
+@@ -315,6 +315,8 @@
+                 "Write .pdf output file", this->params()),
+     STRING_MEMBER(unrecognised_char, "|",
+                   "Output char for unidentified blobs", this->params()),
++    STRING_MEMBER(pdf_background_image, "",
++                  "PDF Background image to use rather than the input image (if not specified uses input image)", this->params()),
+     INT_MEMBER(suspect_level, 99, "Suspect marker level", this->params()),
+     INT_MEMBER(suspect_space_level, 100,
+                "Min suspect level for rejecting spaces", this->params()),
+Index: ccmain/tesseractclass.h
+===================================================================
+--- ccmain/tesseractclass.h	(revision 1149)
++++ ccmain/tesseractclass.h	(working copy)
+@@ -919,6 +919,8 @@
+   BOOL_VAR_H(tessedit_create_pdf, false, "Write .pdf output file");
+   STRING_VAR_H(unrecognised_char, "|",
+                "Output char for unidentified blobs");
++  STRING_VAR_H(pdf_background_image, "",
++               "PDF Background image to use rather than the input image (if not specified uses input image)");
+   INT_VAR_H(suspect_level, 99, "Suspect marker level");
+   INT_VAR_H(suspect_space_level, 100,
+             "Min suspect level for rejecting spaces");
