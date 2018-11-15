@@ -1,0 +1,46 @@
+#user_words_suffix    user-words
+
+# XXX 0 often recognized as O and vice-versa
+#tessedit_char_blacklist \#$%&*+0123456789<=>?@[\\\]^_`{|}~©«®°±»ÃÄßéêý“”›
+
+#tessedit_char_blacklist \#$*+<=>[\\\]^_{|}~©®°±ÃÄßéêý“”›…’‑—“·
+
+#debug_file /tmp/tes.log
+#segsearch_debug_level 1
+#dawg_debug_level 2
+#tessedit_create_hocr 1
+#textord_min_linesize 1.5
+#textord_excess_blobsize 1.5
+#wordrec_display_segmentations 1
+#textord_tabfind_show_images 1
+#tessedit_dump_pageseg_images 1
+
+#classify_enable_learning 0
+#classify_enable_adaptive_matcher 0
+
+chs_leading_punct (’`”'"«
+chs_trailing_punct1 ).,;:?!»
+chs_trailing_punct2  )’`”'"»
+
+# Bible refs have - and :s in
+numeric_punctuation .,-:
+
+language_model_penalty_case 0.5
+language_model_penalty_non_freq_dict_word 0.15
+language_model_penalty_non_dict_word 0.4
+#language_model_penalty_spacing 0.5
+#language_model_penalty_font 0.2
+
+# These don't appear to do anything:
+#use_new_state_cost 1
+#segment_segcost_rating 1
+#enable_new_segsearch 1
+#textord_force_make_prop_words 1
+##interactive_display_mode                                T
+##tessedit_display_outwords               T
+##language_model_debug_level 2
+#
+#il1_adaption_test 1
+#edges_children_fix F
+#edges_childarea 0.65
+#edges_boxarea 0.9

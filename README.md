@@ -11,6 +11,7 @@ Install the basics:
 installing the tesseract new word database for Turkish:
 
     sudo cp tesseract-train/hasat_tur.traineddata /usr/share/tesseract-ocr/4.00/tessdata/
+    sudo cp tesseract/hasat_txt /usr/share/tesseract-ocr/4.00/tessdata/configs/
 
 Test to see if the programs need recompilation for your OS:
 
