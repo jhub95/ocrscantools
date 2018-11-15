@@ -30,7 +30,8 @@ use Sys::CpuAffinity;
 use File::Temp ();
 use File::Glob ':bsd_glob';
 use FindBin::libs;
-use lib '/home/bookscanner/scantools/lib';
+use lib '/home/bookscanner/ocrscantools/lib';
+use lib '.';
 use BookScan;
 use BookConf;
 binmode \*STDOUT => 'utf8';
@@ -841,6 +842,6 @@ sub input_path { $conf->opt( 'path' ) || 'raw' }
 # XXX for multiple languages just return a spec like eng+hasat_tur
 sub get_language {
     my $lang = $conf->opt( 'language' ) || $DEFAULT_LANG;
-    return $LANGS{$lang} or die "Language $lang not allowed yet - add to config"
+    return $LANGS{$lang} || die "Language $lang not allowed yet - add to config"
 }
 
