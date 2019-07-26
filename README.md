@@ -1,21 +1,34 @@
-# ocrscantools
 Take jpgs, crop and adjust them, and then pass them through Tesseract. https://github.com/tesseract-ocr/tesseract
 
 # Installation
 
-## == Installing patched version of tesseract ==
-apt-get source tesseract
+Install the basics:
 
-get pdf_background_image.patch
+    git clone https://github.com/jhub95/ocrscantools
+    apt update
+    apt install tesseract-ocr libthread-queue-any-perl libmouse-perl libconfig-general-perl liblist-allutils-perl imagemagick libpath-tiny-perl libsys-cpuaffinity-perl libfindbin-libs-perl python-pil python-reportlab libtest-differences-perl
 
-cd tesseract-dir
+installing the tesseract new word database for Turkish:
 
-patch -p0 < ../pdf_background_image.patch
+    sudo cp tesseract-train/hasat_tur.traineddata /usr/share/tesseract-ocr/4.00/tessdata/
+    sudo cp tesseract/hasat_txt /usr/share/tesseract-ocr/4.00/tessdata/configs/
 
-dpkg-buildpackage
+Test to see if the programs need recompilation for your OS:
 
-## installing the new word database:
-sudo cp /tmp/tesstrain/hasat_tur/hasat_tur.traineddata /usr/share/tesseract-ocr/tessdata/hasat_tur.traineddata
+    ./htmlout
 
-## Perl and ImageMagick
-sudo apt install libthread-queue-any-perl libmouse-perl libconfig-general-perl liblist-allutils-perl imagemagick
+If that produces errors than recompile like:
+
+    apt install libtesseract-dev dpkg-dev libopencv-dev
+    g++ -std=c++0x -O3 htmlout.cpp -ltesseract -llept -o htmlout
+    g++ -O3 -o detect_page detect_page.cpp -lopencv_core -lopencv_objdetect -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs
+
+## Installing patched version of tesseract
+
+I don't think this is still required, but you can build the patched version (ver 3 - only tested on ubuntu 14) like:
+
+    apt-get source tesseract
+    get pdf_background_image.patch
+    cd tesseract-dir
+    patch -p0 < ../pdf_background_image.patch
+    dpkg-buildpackage
