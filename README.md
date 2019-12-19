@@ -22,6 +22,15 @@ If that produces errors than recompile like:
     apt install libtesseract-dev dpkg-dev libopencv-dev
     g++ -std=c++0x -O3 htmlout.cpp -ltesseract -llept -o htmlout
     g++ -O3 -o detect_page detect_page.cpp -lopencv_core -lopencv_objdetect -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs
+    
+Change the lib include path:
+
+    in the newly downloaded convert_book.pl file change line 33 to match 
+    the username of the location you installed ocrscantools.
+    --
+    i.e. the default is: use lib '/home/bookscanner/ocrscantools/lib'; 
+    but you installed the ocrscantools in /home/justin/ocrscantools. 
+    Just replace 'bookscanner' with 'justin', then save the file.
 
 ## Installing patched version of tesseract
 
